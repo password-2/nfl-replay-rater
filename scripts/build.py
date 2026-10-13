@@ -69,11 +69,22 @@ TIERS = [  # (minimum quality, key, short label)
 TIER_KEYS = [t[1] for t in TIERS]          # best first
 TIER_LABEL = {t[1]: t[2] for t in TIERS}
 
-# STAKES (0-100, measured before kickoff) moves the verdict one tier.
-STAKES_HIGH = 60   # at or above: up one tier
-STAKES_DEAD = 8    # below: down one tier (nothing on the line)
+# STAKES (0-100, measured before kickoff) nudge the verdict score by up to
+# +/-10 points, enough to tip a marginal game over a tier boundary but not to
+# move a game that sits comfortably inside its tier. Piecewise-linear curve:
+STAKES_CURVE = [(0, -10), (5, -10), (20, 0), (40, 0), (90, 10), (100, 10)]
 STAKES_VERSION = 2
 EXTRAS_VERSION = 3
+
+
+def stakes_adjust(stakes):
+    if stakes is None:
+        return 0.0
+    pts = STAKES_CURVE
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if stakes <= x1:
+            return round(y0 + (y1 - y0) * (max(stakes, x0) - x0) / (x1 - x0), 1)
+    return float(pts[-1][1])
 
 
 def tier_for(quality):
@@ -84,17 +95,13 @@ def tier_for(quality):
 
 
 def verdict(quality, stakes):
-    """Returns (base tier, final tier, shift). shift is +1, 0 or -1."""
+    """Returns (base tier, final tier, shift, stakes adjustment, verdict score)."""
     base, _ = tier_for(quality)
-    shift = 0
-    if stakes is not None:
-        if stakes >= STAKES_HIGH:
-            shift = 1
-        elif stakes < STAKES_DEAD:
-            shift = -1
-    i = TIER_KEYS.index(base)
-    j = min(len(TIER_KEYS) - 1, max(0, i - shift))
-    return base, TIER_KEYS[j], (i - j)
+    adj = stakes_adjust(stakes)
+    score = round(quality + adj, 1)
+    final, _ = tier_for(score)
+    shift = TIER_KEYS.index(base) - TIER_KEYS.index(final)
+    return base, final, shift, adj, score
 
 
 # ---------------------------------------------------------------- fetching
@@ -483,8 +490,9 @@ def summarise(g, r, stakes):
     row["stakes"] = stakes
     if r:
         row.update({k: r[k] for k in ("rating", "factors", "style_kind", "upset_source", "chaos", "ot", "lead_changes", "ties")})
-        base, final, shift = verdict(r["rating"], stakes)
-        row.update({"tier_base": base, "tier": final, "tier_label": TIER_LABEL[final], "shift": shift})
+        base, final, shift, adj, score = verdict(r["rating"], stakes)
+        row.update({"tier_base": base, "tier": final, "tier_label": TIER_LABEL[final], "shift": shift,
+                    "stakes_adj": adj, "score": score})
         row["plays"] = [
             {k: e[k] for k in ("side", "kind", "pts", "yards", "period", "clock", "home", "away", "defst")}
             for e in r["events"] if e["kind"] != "conv"
@@ -561,10 +569,9 @@ def build_season(year, fetch, cur=None):
         "season": year,
         "current": cur is not None,
         "base_points": BASE_POINTS,
-        "stakes_high": STAKES_HIGH,
+        "stakes_curve": STAKES_CURVE,
         "factor_info": [{"key": k, "label": FACTOR_INFO[k][0], "points": WEIGHTS[k], "rule": FACTOR_INFO[k][1]}
                         for k in WEIGHTS],
-        "stakes_dead": STAKES_DEAD,
         "weights": WEIGHTS,
         "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
         "games": rows,

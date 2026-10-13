@@ -355,7 +355,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       // Verdict first (after the stakes shift), then quality.
       copy.sort(function (a, b) {
         var ta = rated(a) ? TIER_RANK[a.tier] : 9, tb = rated(b) ? TIER_RANK[b.tier] : 9;
-        var ra = rated(a) ? a.rating : -1, rb = rated(b) ? b.rating : -1;
+        var ra = rated(a) ? (a.score != null ? a.score : a.rating) : -1, rb = rated(b) ? (b.score != null ? b.score : b.rating) : -1;
         return ta - tb || rb - ra || (a.date || "").localeCompare(b.date || "");
       });
     } else if (state.sort === "stakes") {
@@ -457,7 +457,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 
   function verdict(g) {
     if (rated(g)) {
-      var note = g.shift > 0 ? "▲ stakes" : g.shift < 0 ? "▼ nothing on the line" : null;
+      var note = g.shift > 0 ? "▲ tipped up by stakes" : g.shift < 0 ? "▼ tipped down, little at stake" : null;
       return el("div", null, [
         el("span", { "class": "verdict v-" + g.tier, text: g.tier_label }),
         note ? el("div", { "class": "stk", text: note }) : null
@@ -486,7 +486,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       ])]),
       el("td", { "class": "rating" + (rated(g) ? "" : " na") }, [
         rated(g) ? Math.round(g.rating) + "%" : "–",
-        g.stakes != null ? el("div", { "class": "stk", text: "stakes " + Math.round(g.stakes) }) : null
+        g.stakes != null ? el("div", { "class": "stk", text: "stakes " + Math.round(g.stakes) + (rated(g) && g.stakes_adj ? " · " + (g.stakes_adj > 0 ? "+" : "") + Math.round(g.stakes_adj) : "") }) : null
       ]),
       el("td", null, [verdict(g)])
     ]);
@@ -502,14 +502,15 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 
   function stakesExplain(g) {
     if (g.stakes == null) return "Stakes not available for this game.";
-    var d = state.data, st = Math.round(g.stakes);
+    var st = Math.round(g.stakes), adj = g.stakes_adj || 0;
     var why = g.season_type === 3 ? "a playoff game" : "the swing in both teams' playoff, division and 1-seed chances";
     var base = TIER_NAMES[g.tier_base] || g.tier_base, fin = TIER_NAMES[g.tier] || g.tier;
-    var s = "Stakes " + st + " / 100, from " + why + ". Quality alone says " + base + ". ";
-    if (g.shift > 0) return s + "Stakes of " + d.stakes_high + "+ move the verdict up one tier, to " + fin + ".";
-    if (g.shift < 0) return s + "Stakes under " + d.stakes_dead + " mean nothing was on the line, so the verdict moves down one tier, to " + fin + ".";
-    if (st >= d.stakes_high || st < d.stakes_dead) return s + "It is already at the end of the scale, so the verdict stays " + fin + ".";
-    return s + "Stakes between " + d.stakes_dead + " and " + d.stakes_high + " leave the verdict unchanged.";
+    var s = "Stakes " + st + " / 100, from " + why + ". ";
+    if (!adj) return s + "That is in the neutral range, so no adjustment: verdict " + fin + " on quality alone.";
+    s += "Adjustment " + (adj > 0 ? "+" : "") + adj.toFixed(1) + " points, giving a verdict score of " + g.score.toFixed(1) + ". ";
+    if (g.shift > 0) return s + "That tips it over the boundary from " + base + " up to " + fin + ".";
+    if (g.shift < 0) return s + "That tips it below the boundary, from " + base + " down to " + fin + ".";
+    return s + "Not enough to cross a tier boundary, so it stays " + fin + ".";
   }
 
   function renderHow() {
@@ -526,7 +527,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       el("thead", null, [el("tr", null, [el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { text: "Full strength when" })])]), tb
     ])]));
     box.appendChild(el("p", { text: "Verdict from quality: 100+ watch now, 80+ full game, 60+ condensed, below 60 highlights." }));
-    box.appendChild(el("p", { text: "Stakes (0–100) are measured before kickoff. Standings are rebuilt from earlier results, the rest of the season is simulated 1,500 times, and stakes measure how much the result swung both teams' chances of making the playoffs, winning the division and taking the 1 seed. Playoff games score 70 to 100 by round. Stakes of " + d.stakes_high + "+ move the verdict up one tier; under " + d.stakes_dead + " moves it down one. The move is a flat one tier either way." }));
+    box.appendChild(el("p", { text: "Stakes (0–100) are measured before kickoff. Standings are rebuilt from earlier results, the rest of the season is simulated 1,500 times, and stakes measure how much the result swung both teams' chances of making the playoffs, winning the division and taking the 1 seed. Playoff games score 70 to 100 by round." }));
+    box.appendChild(el("p", { text: "Stakes then adjust the verdict score by at most 10 points either way, enough to tip a marginal game over a boundary but not to move one sitting comfortably in its tier: 0–5 stakes is −10, rising to 0 at 20; 20–40 is neutral; then up to +10 at 90 and above. A Wild Card game gets about +6, a Conference final or Super Bowl +10." }));
   }
 
   function factorTable(g) {

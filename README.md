@@ -42,11 +42,13 @@ results, the rest of the season is simulated 1,500 times, and the game's score i
 the swing in both teams' chances of making the playoffs, winning the division
 and taking the 1 seed. Playoff games score 70 (Wild Card) to 100 (Super Bowl).
 
-**Verdict** comes from quality, moved up one tier when stakes are 60+ and down
-one tier when stakes are under 8.
+**Verdict score** = quality + a stakes adjustment of at most 10 points either way:
+stakes 0-5 = -10, rising to 0 at 20; 20-40 neutral; rising to +10 at 90+.
+Enough to tip a marginal game over a tier boundary, not to move one that sits
+comfortably inside its tier.
 
-Tune `WEIGHTS`, `STAKES_HIGH` and `STAKES_DEAD` in `scripts/build.py`, and
-`LEVERAGE_FULL` in `scripts/stakes.py`.
+Tune `WEIGHTS` and `STAKES_CURVE` in `scripts/build.py`, and `LEVERAGE_FULL`
+in `scripts/stakes.py`.
 
 ## Setup
 
