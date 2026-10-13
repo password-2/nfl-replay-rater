@@ -433,6 +433,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   function verdict(g) {
     if (rated(g)) return el("span", { "class": "verdict v-" + g.tier, text: g.tier_label });
     if (g.state === "in") return el("span", { "class": "verdict v-pending", text: "In progress" });
+    if (g.state === "post" && !g.completed) return el("span", { "class": "verdict v-pending", text: "Not played" });
     if (g.state === "post") return el("span", { "class": "verdict v-pending", text: "Rating soon" });
     return el("span", { "class": "verdict v-pending", text: "Upcoming" });
   }

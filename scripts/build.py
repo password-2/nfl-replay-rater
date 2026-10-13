@@ -363,7 +363,7 @@ def build_season(year, fetch, cur=None):
             for g in sorted(games.values(), key=lambda x: (x["season_type"], x["week"], x["date"] or ""))
             if not (g["season_type"] == 3 and g["week"] == 4)]  # drop the Pro Bowl
 
-    complete = bool(rows) and all(r.get("rating") is not None for r in rows) and (cur is None)
+    complete = bool(rows) and cur is None and all(r.get("rating") is not None for r in rows if r["completed"])
     payload = {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "season": year,
