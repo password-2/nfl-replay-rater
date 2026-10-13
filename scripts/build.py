@@ -69,10 +69,10 @@ TIERS = [  # (minimum quality, key, short label)
 TIER_KEYS = [t[1] for t in TIERS]          # best first
 TIER_LABEL = {t[1]: t[2] for t in TIERS}
 
-# STAKES (0-100, measured before kickoff) nudge the verdict score by up to
-# +/-10 points, enough to tip a marginal game over a tier boundary but not to
-# move a game that sits comfortably inside its tier. Piecewise-linear curve:
-STAKES_CURVE = [(0, -10), (5, -10), (20, 0), (40, 0), (90, 10), (100, 10)]
+# STAKES (0-100, measured before kickoff) add up to +10 points to the verdict
+# score, enough to tip a marginal game over a tier boundary. Low stakes never
+# subtract: a good game is worth watching whatever was on the line.
+STAKES_CURVE = [(0, 0), (40, 0), (90, 10), (100, 10)]
 STAKES_VERSION = 2
 EXTRAS_VERSION = 3
 
