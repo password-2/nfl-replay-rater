@@ -35,6 +35,7 @@ points at full strength. Factors cap at 125%, so quality can pass 100.
 | Comeback | 8 | Winner overcame a 14-point deficit |
 | Big plays | 8 | Two touchdowns of 40+ yards |
 | Defence / special teams | 8 | 1.5 defensive or return touchdowns / safeties |
+| Chaos | 6 | Fights and ejections (3 each), taunting / unsportsmanlike (1.5), personal fouls (0.5); full at 6 |
 
 **Stakes** (0-100, measured before kickoff): standings are rebuilt from earlier
 results, the rest of the season is simulated 1,500 times, and the game's score is

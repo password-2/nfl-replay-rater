@@ -167,6 +167,12 @@ tr.detail td { background: color-mix(in srgb, var(--fg) 3%, var(--surface)); pad
 .empty-state, .error { padding: 24px 16px; text-align: center; color: var(--muted); }
 .error { color: var(--t-now); }
 footer { color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.how-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.how-wrap summary { cursor: pointer; font: 600 1rem/1.2 var(--display); text-transform: uppercase; letter-spacing: .06em; }
+.how-body { display: grid; gap: 10px; margin-top: 10px; font-size: .88rem; }
+.how-body p { margin: 0; max-width: 65ch; }
+.mini.how td { vertical-align: top; }
+.mini.how td:last-child { min-width: 14em; }
 footer p { margin: 0 0 6px; max-width: 65ch; }
 
 @media (max-width: 420px) {
@@ -237,6 +243,11 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     </table>
   </div>
 
+  <details class="how-wrap" id="how">
+    <summary>How the ratings work</summary>
+    <div id="how-body" class="how-body"></div>
+  </details>
+
   <footer>
     <p>Quality rates how good a game was to watch: a shootout or a defensive battle, how much of the second half was within one score, lead changes, upsets, the finish, comebacks, big plays and defensive or special-teams scores. A great game can rate above 100%.</p>
     <p>Stakes (0–100) measures before kickoff how much the result swung each team's chances of making the playoffs, winning the division or taking the 1 seed. High stakes move the verdict up a tier; nothing on the line moves it down one. Playoff games always count as high stakes.</p>
@@ -257,7 +268,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     score_to_win: "Late winning score",
     comeback: "Comeback",
     big_plays: "Big plays (40+ yd TDs)",
-    defence_st: "Defence / special teams scores"
+    defence_st: "Defence / special teams scores",
+    chaos: "Chaos (fights, ejections, fun penalties)"
   };
   var TIER_RANK = { now: 0, full: 1, condensed: 2, highlights: 3 };
   var TIER_ORDER = ["now", "full", "condensed", "highlights"];
@@ -480,6 +492,43 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     ]);
   }
 
+  function chaosLabel(g) {
+    var c = g.chaos || {}, bits = [];
+    var names = { ejections: ["ejection", "ejections"], fights: ["fight", "fights"], taunting: ["taunt", "taunts"],
+      unsportsmanlike: ["unsportsmanlike", "unsportsmanlike"], personal_fouls: ["personal foul", "personal fouls"] };
+    Object.keys(names).forEach(function (k) { if (c[k]) bits.push(c[k] + " " + names[k][c[k] === 1 ? 0 : 1]); });
+    return "Chaos" + (bits.length ? " (" + bits.join(", ") + ")" : "");
+  }
+
+  function stakesExplain(g) {
+    if (g.stakes == null) return "Stakes not available for this game.";
+    var d = state.data, st = Math.round(g.stakes);
+    var why = g.season_type === 3 ? "a playoff game" : "the swing in both teams' playoff, division and 1-seed chances";
+    var base = TIER_NAMES[g.tier_base] || g.tier_base, fin = TIER_NAMES[g.tier] || g.tier;
+    var s = "Stakes " + st + " / 100, from " + why + ". Quality alone says " + base + ". ";
+    if (g.shift > 0) return s + "Stakes of " + d.stakes_high + "+ move the verdict up one tier, to " + fin + ".";
+    if (g.shift < 0) return s + "Stakes under " + d.stakes_dead + " mean nothing was on the line, so the verdict moves down one tier, to " + fin + ".";
+    if (st >= d.stakes_high || st < d.stakes_dead) return s + "It is already at the end of the scale, so the verdict stays " + fin + ".";
+    return s + "Stakes between " + d.stakes_dead + " and " + d.stakes_high + " leave the verdict unchanged.";
+  }
+
+  function renderHow() {
+    var d = state.data, box = $("how-body");
+    if (!d || !d.factor_info) return;
+    box.textContent = "";
+    var tb = el("tbody");
+    d.factor_info.forEach(function (f) {
+      tb.appendChild(el("tr", null, [el("td", { text: f.label }), el("td", { "class": "num", text: String(f.points) }), el("td", { text: f.rule })]));
+    });
+    var max = d.base_points + d.factor_info.reduce(function (a, f) { return a + f.points; }, 0);
+    box.appendChild(el("p", { text: "Quality starts at " + d.base_points + " base points. Each factor scores from 0 to 125% of its points, so a game can rate above 100% (" + max + " points if every factor is full)." }));
+    box.appendChild(el("div", { "class": "scroll-x" }, [el("table", { "class": "mini how" }, [
+      el("thead", null, [el("tr", null, [el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { text: "Full strength when" })])]), tb
+    ])]));
+    box.appendChild(el("p", { text: "Verdict from quality: 100+ watch now, 80+ full game, 60+ condensed, below 60 highlights." }));
+    box.appendChild(el("p", { text: "Stakes (0–100) are measured before kickoff. Standings are rebuilt from earlier results, the rest of the season is simulated 1,500 times, and stakes measure how much the result swung both teams' chances of making the playoffs, winning the division and taking the 1 seed. Playoff games score 70 to 100 by round. Stakes of " + d.stakes_high + "+ move the verdict up one tier; under " + d.stakes_dead + " moves it down one. The move is a flat one tier either way." }));
+  }
+
   function factorTable(g) {
     var w = state.data.weights;
     var tb = el("tbody");
@@ -490,7 +539,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       if (!(k in w)) return;
       var v = (g.factors && g.factors[k]) || 0;
       var label = k === "style" ? (g.style_kind === "defensive" ? "Defensive battle" : "Shootout")
-        : k === "upset" && g.upset_source === "form" ? "Upset (by form, no betting line)" : FACTOR_LABELS[k];
+        : k === "upset" && g.upset_source === "form" ? "Upset (by form, no betting line)"
+        : k === "chaos" ? chaosLabel(g) : FACTOR_LABELS[k];
       tb.appendChild(el("tr", null, [
         el("td", { text: label }),
         el("td", { "class": "num", text: (v * w[k]).toFixed(1) + " / " + w[k] }),
@@ -570,9 +620,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       }));
       if (actions.childNodes.length) grid.appendChild(actions);
       if (showFactors) {
-        var stakesLine = g.stakes == null ? "Stakes not available for this game."
-          : "Stakes " + Math.round(g.stakes) + " / 100" + (g.season_type === 3 ? " (playoff game)" : " (swing in playoff, division and 1-seed odds)") +
-            (g.shift > 0 ? ". Verdict moved up one tier." : g.shift < 0 ? ". Nothing on the line, so the verdict moved down one tier." : ".");
+        var stakesLine = stakesExplain(g);
         grid.appendChild(el("div", null, [
           el("p", { "class": "sub", text: "Quality · " + g.rating.toFixed(1) + "%" }), factorTable(g),
           el("p", { "class": "meta", style: "margin:10px 0 0", text: stakesLine })
@@ -657,6 +705,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       if (!keepView || !state.week || !weeksList().some(function (w) { return w.key === state.week; })) state.week = wk;
       if (!d.current && state.view === "last") state.view = "week";
       renderMeta();
+      renderHow();
       go();
     });
   }

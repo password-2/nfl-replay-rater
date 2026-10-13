@@ -37,6 +37,26 @@ WEIGHTS = {
     "comeback": 8,        # Biggest deficit the winner overcame
     "big_plays": 8,       # Touchdowns of 40+ yards
     "defence_st": 8,      # Defensive / special teams scores and safeties
+    "chaos": 6,           # Fights, ejections, taunting and other fun penalties
+}
+
+# Published on the page's "How it works" panel.
+FACTOR_INFO = {
+    "style": ("Shootout or defensive battle",
+              "Counts whichever is stronger. Shootout: full at 54 total points. Defensive battle: full when the game "
+              "stays within a score with 20 or fewer total points; turnovers and sacks add a little."),
+    "nail_biter": ("Nail-biter", "Share of the second half played within 8 points. Q4 and overtime count double."),
+    "lead_changes": ("Lead changes", "Full at 4 lead changes. Each tie counts as half."),
+    "upset": ("Upset", "Full when a 9-point underdog wins, using the betting line. Without a line it uses form "
+              "(point margin so far). A tie by the underdog counts half."),
+    "close": ("Close finish", "Full for a tie or 1-point margin, falling to zero at 24. Overtime adds 25%."),
+    "score_to_win": ("Late winning score", "Full when the winner went ahead for good in the last 2 minutes; less "
+                     "the earlier it happened. Overtime counts 125%."),
+    "comeback": ("Comeback", "Full when the winner came back from 14 points down."),
+    "big_plays": ("Big plays", "Full at two touchdowns of 40+ yards."),
+    "defence_st": ("Defence / special teams scores", "Full at 1.5 defensive or return touchdowns or safeties."),
+    "chaos": ("Chaos", "Fights and ejections count most, then taunting and unsportsmanlike conduct, then personal "
+              "fouls. Full at about two ejections. Only what appears in the play-by-play is caught."),
 }
 CAP = 1.25
 
@@ -53,7 +73,7 @@ TIER_LABEL = {t[1]: t[2] for t in TIERS}
 STAKES_HIGH = 60   # at or above: up one tier
 STAKES_DEAD = 8    # below: down one tier (nothing on the line)
 STAKES_VERSION = 2
-EXTRAS_VERSION = 2
+EXTRAS_VERSION = 3
 
 
 def tier_for(quality):
@@ -255,7 +275,35 @@ def parse_extras(summary, game):
         if fav and spread is not None:
             odds = {"favorite": fav, "spread": abs(spread)}
             break
-    return {"box": box or None, "odds": odds}
+    return {"box": box or None, "odds": odds, "chaos": parse_chaos(summary)}
+
+
+CHAOS_PATTERNS = [  # (key, regex, points)
+    ("ejections", r"\bejected\b|\bdisqualified\b", 3.0),
+    ("fights", r"\bfight(?:ing)?\b", 3.0),
+    ("taunting", r"\btaunting\b", 1.5),
+    ("unsportsmanlike", r"unsportsmanlike", 1.5),
+    ("personal_fouls", r"unnecessary roughness|personal foul|roughing the passer|face ?mask", 0.5),
+]
+
+
+def parse_chaos(summary):
+    counts = {k: 0 for k, _, _ in CHAOS_PATTERNS}
+    for d in (summary.get("drives") or {}).get("previous", []):
+        for p in d.get("plays", []):
+            text = (p.get("text") or "").lower()
+            if "penalty" not in text and "ejected" not in text and "disqualified" not in text:
+                continue
+            for k, rx, _ in CHAOS_PATTERNS:
+                if re.search(rx, text):
+                    counts[k] += 1
+    return counts
+
+
+def chaos_points(counts):
+    if not counts:
+        return 0.0
+    return sum(counts.get(k, 0) * pts for k, _, pts in CHAOS_PATTERNS)
 
 
 # ---------------------------------------------------------------- rating
@@ -365,12 +413,14 @@ def rate(game, events, extra=None, exp_margin=None):
         "comeback": round(clamp(comeback / 14), 3),
         "big_plays": round(clamp(sum(1 for e in events if e["kind"] == "td" and e["yards"] >= 40) / 2), 3),
         "defence_st": round(clamp(sum(1 for e in events if e["defst"]) / 1.5), 3),
+        "chaos": round(clamp(chaos_points(extra.get("chaos")) / 6), 3),
     }
     quality = round(BASE_POINTS + sum(WEIGHTS[k] * v for k, v in factors.items()), 1)
     return {
         "rating": quality,
         "factors": factors,
         "style_kind": "defensive" if defensive > shootout else "shootout",
+        "chaos": extra.get("chaos"),
         "upset_source": line_source,
         "ot": ot,
         "lead_changes": changes,
@@ -432,7 +482,7 @@ def summarise(g, r, stakes):
     row = dict(g)
     row["stakes"] = stakes
     if r:
-        row.update({k: r[k] for k in ("rating", "factors", "style_kind", "upset_source", "ot", "lead_changes", "ties")})
+        row.update({k: r[k] for k in ("rating", "factors", "style_kind", "upset_source", "chaos", "ot", "lead_changes", "ties")})
         base, final, shift = verdict(r["rating"], stakes)
         row.update({"tier_base": base, "tier": final, "tier_label": TIER_LABEL[final], "shift": shift})
         row["plays"] = [
@@ -512,6 +562,8 @@ def build_season(year, fetch, cur=None):
         "current": cur is not None,
         "base_points": BASE_POINTS,
         "stakes_high": STAKES_HIGH,
+        "factor_info": [{"key": k, "label": FACTOR_INFO[k][0], "points": WEIGHTS[k], "rule": FACTOR_INFO[k][1]}
+                        for k in WEIGHTS],
         "stakes_dead": STAKES_DEAD,
         "weights": WEIGHTS,
         "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
