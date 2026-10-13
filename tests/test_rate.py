@@ -21,14 +21,14 @@ thriller = {"scoringPlays": [
 g = {"score_home": 30, "score_away": 24, "lines_home": [7, 7, 0, 10, 6]}
 r = rate(g, scoring_events(thriller))
 print("thriller", r["rating"], tier_for(r["rating"]), r["factors"])
-assert r["rating"] >= 85
+assert r["rating"] >= 90
 
 # Blowout
 blow = {"scoringPlays": [play(7 * i, 0, min(4, 1 + i // 2), "5:00", "Rushing Touchdown", "3 Yd run") for i in range(1, 6)]}
 g2 = {"score_home": 35, "score_away": 0, "lines_home": [7, 14, 7, 7]}
 r2 = rate(g2, scoring_events(blow))
 print("blowout", r2["rating"], tier_for(r2["rating"]))
-assert r2["rating"] < 40
+assert r2["rating"] < 30
 
 # Drive-derived plays with separate PAT plays
 drives = {"drives": {"previous": [{"plays": [

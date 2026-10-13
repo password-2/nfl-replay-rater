@@ -21,19 +21,21 @@ watch the full replay, the condensed game or just the highlights.
 
 ## Rating factors
 
-Points at full strength (each factor can reach 125%, so games can exceed 100):
+Every game gets 10 base points, plus each factor's points at full strength
+(factors can reach 125%, so games can exceed 100). Weights were calibrated
+against nflgamerater.com's published 2026 Week 1 ratings.
 
 | Factor | Points | Full strength at |
 | --- | --- | --- |
-| Close finish | 20 | Tied / 1-point margin; +25% for overtime |
-| Late winning score | 20 | Winner went ahead for good in the last 2 minutes (OT = 125%) |
-| Comeback | 15 | Winner overcame a 14-point deficit |
+| High scoring | 30 | 54 total points |
 | Lead changes | 15 | 4 lead changes (a tie counts as half) |
-| High scoring | 10 | 54 total points |
-| Big plays | 10 | Two touchdowns of 40+ yards |
-| Defence / special teams | 10 | 1.5 defensive or return touchdowns / safeties |
+| Big plays | 15 | Two touchdowns of 40+ yards |
+| Defence / special teams | 15 | 1.5 defensive or return touchdowns / safeties |
+| Close finish | 12 | Tied / 1-point margin; +25% for overtime |
+| Late winning score | 10 | Winner went ahead for good in the last 2 minutes (OT = 125%) |
+| Comeback | 10 | Winner overcame a 14-point deficit |
 
-Tune `WEIGHTS` and the divisors in `rate()` in `scripts/build.py`.
+Tune `BASE_POINTS`, `WEIGHTS` and the divisors in `rate()` in `scripts/build.py`.
 
 ## Setup
 
