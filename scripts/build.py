@@ -19,8 +19,6 @@ from datetime import datetime, timezone
 
 BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_PATH = os.path.join(ROOT, "data", "cache.json")
-OUT_PATH = os.path.join(ROOT, "docs", "data.json")
 
 # Points each factor is worth at full strength (factor score 1.0), plus a
 # base that every game gets. Factor scores are capped at 1.25, so a game can
@@ -291,104 +289,148 @@ def load_json(path, default):
         return default
 
 
-def main():
-    cache = load_json(CACHE_PATH, {})
-    first_run = "notified" not in cache
-    rated = cache.get("rated", {})        # event id -> rating result + events
-    notified = set(cache.get("notified", []))
+FIRST_SEASON = 2021
+DATA_DIR = os.path.join(ROOT, "docs", "data")
 
+
+def cache_path(year):
+    return os.path.join(ROOT, "data", f"cache-{year}.json")
+
+
+def summarise(g, r):
+    """Game row for the page. Never includes a score unless finished and rated."""
+    row = dict(g)
+    if r:
+        row.update({k: r[k] for k in ("rating", "factors", "ot", "lead_changes", "ties")})
+        row["tier"], row["tier_label"] = tier_for(r["rating"])
+        row["plays"] = [
+            {k: e[k] for k in ("side", "kind", "pts", "yards", "period", "clock", "home", "away", "defst")}
+            for e in r["events"] if e["kind"] != "conv"
+        ]
+    else:
+        row["score_home"] = row["score_away"] = None
+        row["lines_home"] = row["lines_away"] = []
+    return row
+
+
+def build_season(year, fetch, cur=None):
+    """Update one season. fetch=False rebuilds from cache only (no network)."""
+    cache = load_json(cache_path(year), None)
+    if cache is None and year == 2026:
+        old = load_json(os.path.join(ROOT, "data", "cache.json"), {})  # pre-multi-season cache
+        cache = {"rated": {k: {"events": v["events"]} for k, v in old.get("rated", {}).items()},
+                 "notified": old.get("notified")}
+        if cache["notified"] is None:
+            cache.pop("notified")
+    cache = cache or {}
+    games = cache.get("games", {})
+    events = {k: v["events"] for k, v in cache.get("rated", {}).items()}
+
+    if fetch:
+        jobs = [(year, 2, w) for w in range(1, 19)]
+        if cur is None or cur["type"] >= 3:
+            jobs += [(year, 3, w) for w in range(1, 6)]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            weeks = list(pool.map(lambda j: fetch_week(*j), jobs))
+        for wk in weeks:
+            for g in wk:
+                games[g["id"]] = g
+
+        todo = [g for g in games.values() if g["completed"] and g["id"] not in events]
+        print(f"{year}: {len(games)} games, {len(todo)} to fetch")
+
+        def work(g):
+            try:
+                return g["id"], scoring_events(fetch_summary(g["id"]))
+            except Exception as exc:  # noqa: BLE001
+                print(f"summary failed {g['id']}: {exc}", file=sys.stderr)
+                return g["id"], None
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            for gid, ev in pool.map(work, todo):
+                if ev is None:
+                    continue
+                g = games[gid]
+                if ev and (ev[-1]["home"], ev[-1]["away"]) != (g["score_home"], g["score_away"]):
+                    print(f"warning {gid}: plays end {ev[-1]['home']}-{ev[-1]['away']}, "
+                          f"final {g['score_home']}-{g['score_away']}", file=sys.stderr)
+                events[gid] = ev
+
+    # Re-rate every finished game each run so weight changes apply everywhere.
+    rated = {gid: {**rate(games[gid], ev), "events": ev}
+             for gid, ev in events.items() if gid in games and games[gid]["completed"]}
+    rows = [summarise(g, rated.get(g["id"]))
+            for g in sorted(games.values(), key=lambda x: (x["season_type"], x["week"], x["date"] or ""))
+            if not (g["season_type"] == 3 and g["week"] == 4)]  # drop the Pro Bowl
+
+    complete = bool(rows) and all(r.get("rating") is not None for r in rows) and (cur is None)
+    payload = {
+        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "season": year,
+        "current": cur is not None,
+        "base_points": BASE_POINTS,
+        "weights": WEIGHTS,
+        "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
+        "games": rows,
+    }
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, f"{year}.json"), "w") as f:
+        json.dump(payload, f, separators=(",", ":"))
+
+    cache.update({"games": games, "rated": {k: {"events": v["events"]} for k, v in rated.items()},
+                  "complete": complete})
+    return cache, rows, games
+
+
+def save_cache(year, cache):
+    os.makedirs(os.path.dirname(cache_path(year)), exist_ok=True)
+    with open(cache_path(year), "w") as f:
+        json.dump(cache, f, separators=(",", ":"))
+
+
+def main():
     current = get(f"{BASE}/scoreboard")
     season = current.get("season", {})
     year = int(season.get("year") or datetime.now(timezone.utc).year)
     stype = int(season.get("type") or 2)
-    cur_week = int((current.get("week") or {}).get("number") or 1)
-    if stype == 1:  # preseason: nothing to rate yet, keep last season's page
-        print("preseason - nothing to do")
-        return
 
-    week_jobs = []
-    if stype >= 2:
-        week_jobs += [(year, 2, w) for w in range(1, 19)]
-    if stype == 3:
-        week_jobs += [(year, 3, w) for w in range(1, 6)]
+    # Past seasons: fetch until complete, then rebuild from cache only.
+    seasons = []
+    for y in range(FIRST_SEASON, year):
+        cached = load_json(cache_path(y), {})
+        cache, rows, _ = build_season(y, fetch=not cached.get("complete"))
+        save_cache(y, cache)
+        if rows:
+            seasons.append(y)
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        weeks = list(pool.map(lambda j: fetch_week(*j), week_jobs))
-    games = [g for wk in weeks for g in wk if g["season_type"] in (2, 3)]
-    games = list({g["id"]: g for g in games}.values())
-
-    todo = [g for g in games if g["completed"] and g["id"] not in rated]
-    print(f"{len(games)} games, {len(todo)} newly final")
-
-    def work(g):
-        try:
-            return g["id"], scoring_events(fetch_summary(g["id"]))
-        except Exception as exc:  # noqa: BLE001
-            print(f"summary failed {g['id']}: {exc}", file=sys.stderr)
-            return g["id"], None
-
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        for gid, events in pool.map(work, todo):
-            if events is None:
-                continue
-            g = next(x for x in games if x["id"] == gid)
-            # Sanity check: the play-by-play must reach the final score.
-            if events and (events[-1]["home"], events[-1]["away"]) != (g["score_home"], g["score_away"]):
-                print(f"warning {gid}: plays end {events[-1]['home']}-{events[-1]['away']}, "
-                      f"final {g['score_home']}-{g['score_away']}", file=sys.stderr)
-            rated[gid] = {**rate(g, events), "events": events}
-
-    for gid, r in rated.items():
-        g = next((x for x in games if x["id"] == gid), None)
-        if g and g["completed"]:
-            rated[gid] = {**rate(g, r["events"]), "events": r["events"]}
-
-    out_games = []
-    for g in sorted(games, key=lambda x: (x["season_type"], x["week"], x["date"] or "")):
-        row = dict(g)
-        r = rated.get(g["id"]) if g["completed"] else None
-        if r:
-            row.update({k: r[k] for k in ("rating", "factors", "ot", "lead_changes", "ties")})
-            row["tier"], row["tier_label"] = tier_for(r["rating"])
-            row["plays"] = [
-                {k: e[k] for k in ("side", "kind", "pts", "yards", "period", "clock", "home", "away", "defst")}
-                for e in r["events"] if e["kind"] != "conv"
-            ]
-        else:
-            # Never publish the score of a game that is not finished and rated.
-            for k in ("score_home", "score_away"):
-                row[k] = None
-            row["lines_home"] = row["lines_away"] = []
-        out_games.append(row)
-
-    payload = {
-        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "season": year,
-        "season_type": stype,
-        "current_week": cur_week,
-        "weights": WEIGHTS,
-        "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
-        "games": out_games,
-    }
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    with open(OUT_PATH, "w") as f:
-        json.dump(payload, f, separators=(",", ":"))
+    if stype == 1:  # preseason: rebuild this season from cache only
+        cache, rows, games = build_season(year, fetch=False, cur={"type": 1})
+    else:
+        cache, rows, games = build_season(year, fetch=True, cur={"type": stype})
+    if rows:
+        seasons.append(year)
 
     # Notify once a round of games has finished: something new is final and
     # nothing is still in progress.
-    rated_rows = [g for g in out_games if g.get("rating") is not None]
+    first_run = "notified" not in cache
+    notified = set(cache.get("notified", []))
+    rated_rows = [g for g in rows if g.get("rating") is not None]
     fresh = [g for g in rated_rows if g["id"] not in notified]
-    live = any(g["state"] == "in" for g in games)
+    live = any(g["state"] == "in" for g in games.values())
     if first_run:
-        notified |= {g["id"] for g in rated_rows}  # don't blast the whole season on day one
+        notified |= {g["id"] for g in rated_rows}
     elif fresh and not live:
         notify(os.environ.get("NTFY_TOPIC"), fresh, os.environ.get("SITE_URL"))
         notified |= {g["id"] for g in fresh}
+    cache["notified"] = sorted(notified)
+    save_cache(year, cache)
 
-    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-    with open(CACHE_PATH, "w") as f:
-        json.dump({"rated": rated, "notified": sorted(notified)}, f, separators=(",", ":"))
-    print(f"wrote {len(out_games)} games")
+    with open(os.path.join(DATA_DIR, "seasons.json"), "w") as f:
+        json.dump({"seasons": sorted(seasons, reverse=True), "current": year}, f)
+    old = os.path.join(ROOT, "data", "cache.json")
+    if os.path.exists(old):
+        os.remove(old)
+    print(f"seasons: {seasons}")
 
 
 if __name__ == "__main__":

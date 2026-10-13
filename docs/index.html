@@ -49,6 +49,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
@@ -79,6 +80,18 @@ h1 span { color: var(--accent); }
 }
 .weeks button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .weeks button.empty { color: var(--muted); }
+.weeks button.latest { position: relative; font-weight: 700; }
+.weeks button.latest::after {
+  content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px;
+  border-radius: 50%; background: var(--t-now);
+}
+.seasonsel { display: flex; align-items: center; gap: 8px; }
+.seasonsel select {
+  padding: 6px 28px 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+  font: 600 1rem/1.1 var(--display); letter-spacing: .03em;
+}
+.lead { font-size: .95rem; }
+.lead b { font-family: var(--display); font-size: 1.1rem; letter-spacing: .02em; }
 
 .teamsel { display: flex; gap: 8px; align-items: center; }
 .teamsel select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
@@ -170,11 +183,16 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 <div class="wrap">
   <header>
     <h1>Replay <span>Rater</span></h1>
-    <div class="meta" id="meta">Loading…</div>
+    <div class="seasonsel">
+      <label for="season" class="meta">Season</label>
+      <select id="season"></select>
+    </div>
+    <div class="meta" id="meta" style="flex-basis:100%">Loading…</div>
   </header>
 
   <div class="tabs" role="tablist" aria-label="View">
-    <button role="tab" id="tab-week" aria-selected="true" data-view="week">Week</button>
+    <button role="tab" id="tab-last" aria-selected="true" data-view="last">Last</button>
+    <button role="tab" id="tab-week" aria-selected="false" data-view="week">Week</button>
     <button role="tab" id="tab-season" aria-selected="false" data-view="season">Season</button>
     <button role="tab" id="tab-team" aria-selected="false" data-view="team">Team</button>
   </div>
@@ -228,20 +246,22 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   "use strict";
 
   var FACTOR_LABELS = {
+    high_scoring: "High scoring",
+    lead_changes: "Lead changes",
+    big_plays: "Big plays (40+ yd TDs)",
+    defence_st: "Defence / special teams scores",
     close: "Close finish",
     score_to_win: "Late winning score",
-    comeback: "Comeback",
-    lead_changes: "Lead changes",
-    high_scoring: "High scoring",
-    big_plays: "Big plays (40+ yd TDs)",
-    defence_st: "Defence / special teams scores"
+    comeback: "Comeback"
   };
   var TIER_ORDER = ["now", "full", "condensed", "highlights"];
   var TIER_NAMES = { now: "Watch now", full: "Full game", condensed: "Condensed", highlights: "Highlights" };
   var POST_WEEKS = { 1: "WC", 2: "DIV", 3: "CONF", 5: "SB" };
+  var LAST_WINDOW_MS = 20 * 3600 * 1000; // a "round": games kicking off within 20h of the latest one
 
   var state = {
-    data: null, view: "week", week: null, team: "", sort: "rating",
+    seasons: [], season: null, data: null, cache: {},
+    view: "last", week: null, team: "", sort: "rating",
     tier: null, revealAll: false, open: {}, shown: {}, breakdown: {}
   };
 
@@ -271,12 +291,12 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     var n = +key.slice(1);
     return key[0] === "p" ? (POST_WEEKS[n] || "P" + n) : String(n);
   }
+  function weekTitle(key) { return key[0] === "p" ? "Playoffs " + weekLabel(key) : "Week " + weekLabel(key); }
   function rated(g) { return g.rating !== null && g.rating !== undefined; }
 
   function weeksList() {
     var seen = {}, list = [];
     state.data.games.forEach(function (g) {
-      if (g.season_type === 3 && g.week === 4) return; // Pro Bowl
       var k = weekKey(g);
       if (!seen[k]) { seen[k] = { key: k, games: 0, rated: 0 }; list.push(seen[k]); }
       seen[k].games++; if (rated(g)) seen[k].rated++;
@@ -285,9 +305,16 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   }
 
   function latestWeek() {
-    var list = weeksList(), best = null;
-    list.forEach(function (w) { if (w.rated > 0) best = w.key; });
-    return best || (list[0] && list[0].key);
+    var best = null;
+    weeksList().forEach(function (w) { if (w.rated > 0) best = w.key; });
+    return best || (weeksList()[0] && weeksList()[0].key);
+  }
+
+  function lastRound() {
+    var r = state.data.games.filter(rated);
+    if (!r.length) return [];
+    var latest = Math.max.apply(null, r.map(function (g) { return Date.parse(g.date); }));
+    return r.filter(function (g) { return latest - Date.parse(g.date) <= LAST_WINDOW_MS; });
   }
 
   function teams() {
@@ -297,11 +324,11 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   }
 
   function currentGames() {
-    var gs = state.data.games.filter(function (g) { return !(g.season_type === 3 && g.week === 4); });
-    if (state.view === "week") gs = gs.filter(function (g) { return weekKey(g) === state.week; });
-    else if (state.view === "season") gs = gs.filter(rated);
-    else if (state.view === "team") gs = gs.filter(function (g) { return state.team && (g.home.abbr === state.team || g.away.abbr === state.team); });
-    return gs;
+    var gs = state.data.games;
+    if (state.view === "last") return lastRound();
+    if (state.view === "week") return gs.filter(function (g) { return weekKey(g) === state.week; });
+    if (state.view === "season") return gs.filter(rated);
+    return gs.filter(function (g) { return state.team && (g.home.abbr === state.team || g.away.abbr === state.team); });
   }
 
   function sorted(gs) {
@@ -319,7 +346,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 
   // ----------------------------------------------------------------- render
 
-  function renderTabs() {
+  function renderControls() {
     document.querySelectorAll(".tabs button").forEach(function (b) {
       b.setAttribute("aria-selected", String(b.dataset.view === state.view));
     });
@@ -328,55 +355,79 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     $("sort-rating").setAttribute("aria-pressed", String(state.sort === "rating"));
     $("sort-time").setAttribute("aria-pressed", String(state.sort === "time"));
     $("reveal-all").checked = state.revealAll;
+    $("season").value = String(state.season);
+  }
+
+  function renderSeasons() {
+    var sel = $("season"); sel.textContent = "";
+    state.seasons.forEach(function (y) { sel.appendChild(el("option", { value: String(y), text: String(y) })); });
   }
 
   function renderWeeks() {
     var nav = $("weeks"); nav.textContent = "";
+    var latest = latestWeek();
     weeksList().forEach(function (w) {
-      var b = el("button", {
+      var cls = [w.rated ? "" : "empty", w.key === latest ? "latest" : ""].join(" ").trim();
+      nav.appendChild(el("button", {
         "aria-pressed": String(w.key === state.week),
-        "class": w.rated ? "" : "empty",
-        title: w.key[0] === "p" ? "Playoffs" : "Week " + weekLabel(w.key),
+        "class": cls,
+        title: weekTitle(w.key) + (w.key === latest ? " (latest)" : ""),
         text: weekLabel(w.key),
-        onclick: function () { state.week = w.key; state.tier = null; go(); }
-      });
-      nav.appendChild(b);
+        onclick: function () { state.week = w.key; go(); }
+      }));
     });
     var active = nav.querySelector('[aria-pressed="true"]');
     if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest", inline: "center" });
   }
 
   function renderTeams() {
-    var sel = $("team");
-    if (sel.options.length) return;
+    var sel = $("team"); sel.textContent = "";
     sel.appendChild(el("option", { value: "", text: "Choose a team" }));
     teams().forEach(function (t) { sel.appendChild(el("option", { value: t.abbr, text: t.name + " (" + t.abbr + ")" })); });
     sel.value = state.team;
   }
 
+  function summaryTitle(gs) {
+    if (state.view === "last") {
+      if (!gs.length) return "Last round";
+      var ds = gs.map(function (g) { return new Date(g.date); }).sort(function (a, b) { return a - b; });
+      var a = fmtKick.format(ds[0]), b = fmtKick.format(ds[ds.length - 1]);
+      return "Last round · " + (a === b ? a : a + " – " + b);
+    }
+    if (state.view === "week") return weekTitle(state.week);
+    if (state.view === "season") return state.season + " season";
+    return state.team || "Team";
+  }
+
   function renderSummary(gs) {
     var box = $("summary"); box.textContent = "";
     var r = gs.filter(rated);
-    var title = state.view === "week"
-      ? (state.week[0] === "p" ? "Playoffs " + weekLabel(state.week) : "Week " + weekLabel(state.week))
-      : state.view === "season" ? state.data.season + " season" : (state.team || "Team");
     var avg = r.length ? Math.round(r.reduce(function (s, g) { return s + g.rating; }, 0) / r.length) : null;
 
     box.appendChild(el("div", null, [
-      el("div", { "class": "label", text: title + (state.view === "week" ? " rating" : " average") }),
+      el("div", { "class": "label", text: summaryTitle(gs) + " · average" }),
       el("div", { "class": "big", text: avg === null ? "–" : avg + "%" })
     ]));
 
     var chips = el("div", { "class": "chips", role: "group", "aria-label": "Filter by verdict" });
     TIER_ORDER.forEach(function (t) {
       var n = r.filter(function (g) { return g.tier === t; }).length;
-      if (!n) return;
       chips.appendChild(el("button", {
         "class": "chip", "aria-pressed": String(state.tier === t),
-        onclick: function () { state.tier = state.tier === t ? null : t; render(); }
+        onclick: function () { state.tier = state.tier === t ? null : t; store("rr-tier", state.tier || ""); render(); }
       }, [el("i", { style: "background:var(--t-" + t + ")" }), TIER_NAMES[t] + " " + n]));
     });
     box.appendChild(chips);
+
+    if (state.view === "last" && r.length) {
+      var best = sorted(r)[0];
+      var msg = best.tier === "now" || best.tier === "full"
+        ? [el("b", { text: best.away.abbr + " @ " + best.home.abbr }), " is the one to watch: " + best.tier_label.toLowerCase() + ". Avoid spoilers until you have."]
+        : best.tier === "condensed"
+          ? [el("b", { text: best.away.abbr + " @ " + best.home.abbr }), " is worth the condensed game. Nothing needs the full replay."]
+          : ["Nothing worth more than highlights. Browse freely."];
+      box.appendChild(el("div", { "class": "lead", style: "flex-basis:100%" }, msg));
+    }
   }
 
   function verdict(g) {
@@ -389,8 +440,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   function gameRow(g) {
     var d = g.date ? new Date(g.date) : null;
     var when = d ? [el("div", { text: fmtKick.format(d) }), el("div", { text: fmtTime.format(d) })] : [];
-    var sub = state.view === "week" ? null : (g.season_type === 3 ? weekLabel(weekKey(g)) : "Week " + g.week);
-    var tr = el("tr", {
+    var sub = state.view === "week" ? null : weekTitle(weekKey(g));
+    return el("tr", {
       "class": "game", tabindex: "0", "aria-expanded": String(!!state.open[g.id]),
       style: "--stripe:" + (rated(g) ? "var(--t-" + g.tier + ")" : "transparent"),
       onclick: function () { toggle(g.id); },
@@ -404,46 +455,44 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       el("td", { "class": "rating" + (rated(g) ? "" : " na"), text: rated(g) ? Math.round(g.rating) + "%" : "–" }),
       el("td", null, [verdict(g)])
     ]);
-    return tr;
   }
 
   function factorTable(g) {
     var w = state.data.weights;
-    var t = el("table", { "class": "mini" }, [
-      el("thead", null, [el("tr", null, [
-        el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { "class": "hide-sm", text: "" })
-      ])])
-    ]);
     var tb = el("tbody");
+    if (state.data.base_points) tb.appendChild(el("tr", null, [
+      el("td", { text: "Base" }), el("td", { "class": "num", text: state.data.base_points.toFixed(1) }), el("td", { "class": "hide-sm" })
+    ]));
     Object.keys(FACTOR_LABELS).forEach(function (k) {
+      if (!(k in w)) return;
       var v = (g.factors && g.factors[k]) || 0;
-      var pts = v * w[k];
       tb.appendChild(el("tr", null, [
         el("td", { text: FACTOR_LABELS[k] }),
-        el("td", { "class": "num", text: pts.toFixed(1) + " / " + w[k] }),
+        el("td", { "class": "num", text: (v * w[k]).toFixed(1) + " / " + w[k] }),
         el("td", { "class": "hide-sm", style: "width:35%" }, [el("div", { "class": "bar" }, [el("b", { style: "width:" + Math.min(100, v * 100) + "%" })])])
       ]));
     });
-    t.appendChild(tb);
-    return t;
+    return el("table", { "class": "mini" }, [
+      el("thead", null, [el("tr", null, [el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { "class": "hide-sm" })])]),
+      tb
+    ]);
   }
 
   function scoreBlock(g) {
     var frag = el("div", { "class": "detail-grid" });
-    var ot = g.ot ? " (OT)" : "";
     frag.appendChild(el("div", { "class": "finalscore" }, [
-      g.away.abbr + " " + g.score_away + " – " + g.score_home + " " + g.home.abbr + ot,
+      g.away.abbr + " " + g.score_away + " – " + g.score_home + " " + g.home.abbr + (g.ot ? " (OT)" : ""),
       el("small", { text: "Final" })
     ]));
 
     var nq = Math.max(g.lines_home.length, g.lines_away.length);
     if (nq) {
-      var head = [el("th", { text: "" })];
+      var head = [el("th")];
       for (var i = 0; i < nq; i++) head.push(el("th", { "class": "num", text: i < 4 ? "Q" + (i + 1) : "OT" }));
       head.push(el("th", { "class": "num", text: "T" }));
       var row = function (team, lines, total) {
         var cells = [el("td", { text: team })];
-        for (var i = 0; i < nq; i++) cells.push(el("td", { "class": "num", text: lines[i] != null ? String(lines[i]) : "" }));
+        for (var j = 0; j < nq; j++) cells.push(el("td", { "class": "num", text: lines[j] != null ? String(lines[j]) : "" }));
         cells.push(el("td", { "class": "num", text: String(total) }));
         return el("tr", null, cells);
       };
@@ -457,11 +506,10 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       var kinds = { td: "TD", fg: "FG", safety: "Safety" };
       var body = el("tbody");
       g.plays.forEach(function (p) {
-        var team = p.side === "home" ? g.home.abbr : g.away.abbr;
         var what = (kinds[p.kind] || p.kind) + (p.yards && p.kind !== "safety" ? " " + p.yards + " yd" : "") + (p.defst ? " (D/ST)" : "");
         body.appendChild(el("tr", null, [
           el("td", { text: (p.period > 4 ? "OT" : "Q" + p.period) + (p.clock ? " " + p.clock : "") }),
-          el("td", { text: team }),
+          el("td", { text: p.side === "home" ? g.home.abbr : g.away.abbr }),
           el("td", { text: what }),
           el("td", { "class": "num", text: p.away + "–" + p.home })
         ]));
@@ -480,7 +528,6 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   }
 
   function detailRow(g) {
-    var td = el("td", { colspan: "4" });
     var grid = el("div", { "class": "detail-grid" });
     if (!rated(g)) {
       grid.appendChild(el("div", { "class": "meta", text: g.state === "pre" ? "Not played yet." : "Rated once the game is final." }));
@@ -500,8 +547,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       if (showFactors) grid.appendChild(el("div", null, [el("p", { "class": "sub", text: "Breakdown · " + g.rating.toFixed(1) + "%" }), factorTable(g)]));
       if (showScore) grid.appendChild(scoreBlock(g));
     }
-    td.appendChild(grid);
-    return el("tr", { "class": "detail" }, [td]);
+    return el("tr", { "class": "detail" }, [el("td", { colspan: "4" }, [grid])]);
   }
 
   function renderRows(gs) {
@@ -510,7 +556,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     if (state.tier) list = list.filter(function (g) { return g.tier === state.tier; });
     if (!list.length) {
       var msg = state.view === "team" && !state.team ? "Choose a team to see its games."
-        : state.view === "season" ? "No finished games yet this season." : "No games to show.";
+        : state.tier ? "No " + TIER_NAMES[state.tier].toLowerCase() + " games here. Tap the filter again to show all."
+        : state.view === "season" || state.view === "last" ? "No finished games yet this season." : "No games to show.";
       tb.appendChild(el("tr", null, [el("td", { colspan: "4", "class": "empty-state", text: msg })]));
       return;
     }
@@ -524,11 +571,11 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     var gen = new Date(state.data.generated);
     var mins = Math.round((Date.now() - gen.getTime()) / 60000);
     var ago = mins < 1 ? "just now" : mins < 60 ? mins + " min ago" : mins < 1440 ? Math.round(mins / 60) + " h ago" : Math.round(mins / 1440) + " days ago";
-    $("meta").textContent = state.data.season + " season · updated " + ago;
+    $("meta").textContent = state.data.current ? "Updated " + ago : state.season + " season is complete";
   }
 
   function render() {
-    renderTabs();
+    renderControls();
     if (state.view === "week") renderWeeks();
     if (state.view === "team") renderTeams();
     var gs = currentGames();
@@ -536,55 +583,92 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     renderRows(gs);
   }
 
-  function toggle(id) { state.open[id] = !state.open[id]; render(); }
+  // Closing a game hides its score and breakdown again.
+  function toggle(id) {
+    if (state.open[id]) { delete state.open[id]; delete state.shown[id]; delete state.breakdown[id]; }
+    else state.open[id] = true;
+    render();
+  }
 
   // ----------------------------------------------------------------- routing
+  // Hash: #<season>/<view>, view = last | season | team | team-ABC | w5 | p1
 
   function go() {
-    var h = state.view === "season" ? "season" : state.view === "team" ? "team" + (state.team ? "-" + state.team : "") : state.week;
+    var v = state.view === "week" ? state.week : state.view === "team" && state.team ? "team-" + state.team : state.view;
+    var h = state.season + "/" + v;
     if (location.hash.slice(1) !== h) history.replaceState(null, "", "#" + h);
     render();
   }
 
-  function fromHash() {
-    var h = location.hash.slice(1);
-    if (h === "season") state.view = "season";
-    else if (h.indexOf("team") === 0) { state.view = "team"; state.team = h.split("-")[1] || store("rr-team") || ""; }
-    else if (/^[wp]\d+$/.test(h)) { state.view = "week"; state.week = h; }
+  function parseHash() {
+    var parts = location.hash.slice(1).split("/");
+    var season = +parts[0] || null, v = parts[1] || "";
+    var out = { season: season, view: null, week: null, team: "" };
+    if (v === "last" || v === "season") out.view = v;
+    else if (v.indexOf("team") === 0) { out.view = "team"; out.team = v.split("-")[1] || ""; }
+    else if (/^[wp]\d+$/.test(v)) { out.view = "week"; out.week = v; }
+    return out;
+  }
+
+  function loadSeason(year) {
+    if (state.cache[year]) return Promise.resolve(state.cache[year]);
+    return fetch("data/" + year + ".json", { cache: "no-cache" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (d) { state.cache[year] = d; return d; });
+  }
+
+  function setSeason(year, keepView) {
+    return loadSeason(year).then(function (d) {
+      state.season = year; state.data = d; state.open = {}; state.shown = {}; state.breakdown = {};
+      var wk = latestWeek();
+      if (!keepView || !state.week || !weeksList().some(function (w) { return w.key === state.week; })) state.week = wk;
+      if (!d.current && state.view === "last") state.view = "week";
+      renderMeta();
+      go();
+    });
+  }
+
+  function showError(err) {
+    $("meta").textContent = "";
+    $("rows").textContent = "";
+    $("rows").appendChild(el("tr", null, [el("td", { colspan: "4", "class": "error",
+      text: "Couldn't load the ratings (" + err.message + "). The update may still be running; check the Actions tab on GitHub." })]));
   }
 
   document.querySelectorAll(".tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
-      state.view = b.dataset.view; state.tier = null;
-      if (state.view === "team" && !state.team) state.team = store("rr-team") || "";
+      state.view = b.dataset.view;
+      if (state.view !== "team") state.team = "";
+      if (state.view === "week" && !state.week) state.week = latestWeek();
       go();
     });
   });
-  $("team").addEventListener("change", function (e) { state.team = e.target.value; store("rr-team", state.team); state.tier = null; go(); });
+  $("season").addEventListener("change", function (e) { setSeason(+e.target.value, true).catch(showError); });
+  $("team").addEventListener("change", function (e) { state.team = e.target.value; go(); });
   $("sort-rating").addEventListener("click", function () { state.sort = "rating"; store("rr-sort", "rating"); render(); });
   $("sort-time").addEventListener("click", function () { state.sort = "time"; store("rr-sort", "time"); render(); });
   $("reveal-all").addEventListener("change", function (e) { state.revealAll = e.target.checked; store("rr-reveal", e.target.checked ? "1" : "0"); render(); });
-  window.addEventListener("hashchange", function () { fromHash(); render(); });
+  window.addEventListener("hashchange", function () {
+    var h = parseHash();
+    if (h.view) { state.view = h.view; state.week = h.week || state.week; state.team = h.team; }
+    if (h.season && h.season !== state.season) setSeason(h.season, true).catch(showError); else render();
+  });
 
   state.sort = store("rr-sort") === "time" ? "time" : "rating";
   state.revealAll = store("rr-reveal") === "1";
+  state.tier = TIER_ORDER.indexOf(store("rr-tier")) >= 0 ? store("rr-tier") : null;
 
-  fetch("data.json", { cache: "no-cache" })
+  fetch("data/seasons.json", { cache: "no-cache" })
     .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-    .then(function (data) {
-      state.data = data;
-      state.week = latestWeek();
-      fromHash();
-      if (!state.week) state.week = latestWeek();
-      renderMeta();
-      go();
+    .then(function (s) {
+      state.seasons = s.seasons;
+      renderSeasons();
+      var h = parseHash();
+      if (h.view) { state.view = h.view; state.week = h.week; state.team = h.team; }
+      var year = h.season && s.seasons.indexOf(h.season) >= 0 ? h.season : s.current;
+      return setSeason(year, !!h.view);
     })
-    .catch(function (err) {
-      $("meta").textContent = "";
-      $("rows").textContent = "";
-      $("rows").appendChild(el("tr", null, [el("td", { colspan: "4", "class": "error",
-        text: "Couldn't load the ratings (" + err.message + "). The first update may not have run yet; check the Actions tab on GitHub." })]));
-    });
+    .catch(showError);
 })();
 </script>
 </body>
