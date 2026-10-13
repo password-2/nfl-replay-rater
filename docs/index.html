@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Replay Rater</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single narrow column built for a phone at 7am; tabs, then a dense
+   game table with tier stripes; tap a row to open its detail. */
+:root {
+  --bg: #f2f4f1;
+  --surface: #ffffff;
+  --fg: #18201a;
+  --muted: #5b665e;
+  --line: #d6ddd6;
+  --accent: #1d6b41;
+  --accent-ink: #ffffff;
+  --t-now: #c43d0e;
+  --t-full: #1d6b41;
+  --t-condensed: #a8730f;
+  --t-highlights: #8a948c;
+  --tint-now: #fbe6dc;
+  --tint-full: #e1efe6;
+  --tint-condensed: #f6ecd6;
+  --tint-highlights: transparent;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1310; --surface: #161c18; --fg: #e4eae5; --muted: #98a39b; --line: #29312b;
+    --accent: #4cc17f; --accent-ink: #0f1310;
+    --t-now: #ff8550; --t-full: #4cc17f; --t-condensed: #e2b04f; --t-highlights: #6f7a72;
+    --tint-now: #3a1f14; --tint-full: #15301f; --tint-condensed: #33290f; --tint-highlights: transparent;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1310; --surface: #161c18; --fg: #e4eae5; --muted: #98a39b; --line: #29312b;
+  --accent: #4cc17f; --accent-ink: #0f1310;
+  --t-now: #ff8550; --t-full: #4cc17f; --t-condensed: #e2b04f; --t-highlights: #6f7a72;
+  --tint-now: #3a1f14; --tint-full: #15301f; --tint-condensed: #33290f; --tint-highlights: transparent;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 400 15px/1.45 var(--body);
+  padding: env(safe-area-inset-top, 0px) 16px calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+.wrap { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; padding-block: 14px; }
+button, select { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font: 700 1.9rem/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
+h1 span { color: var(--accent); }
+.meta { color: var(--muted); font-size: .82rem; }
+
+.tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.tabs button {
+  flex: 1; border: 0; background: transparent; padding: 8px 6px; border-radius: 7px; cursor: pointer;
+  font: 600 .95rem/1 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+
+.weeks { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.weeks button {
+  flex: 0 0 auto; min-width: 42px; padding: 6px 9px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface);
+  font: 600 .95rem/1 var(--display); font-variant-numeric: tabular-nums;
+}
+.weeks button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.weeks button.empty { color: var(--muted); }
+
+.teamsel { display: flex; gap: 8px; align-items: center; }
+.teamsel select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.summary .big { font: 700 1.6rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.summary .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); font-size: .82rem; font-variant-numeric: tabular-nums;
+}
+.chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.chip[aria-pressed="true"] { border-color: var(--fg); }
+
+.legend { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); cursor: pointer; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.sort { display: inline-flex; gap: 4px; font-size: .82rem; color: var(--muted); align-items: center; }
+.sort button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.sort button[aria-pressed="true"] { border-color: var(--fg); color: var(--fg); }
+
+.table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font: 600 .74rem/1 var(--body); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); padding: 10px 10px 8px; border-bottom: 1px solid var(--line);
+}
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr.game { cursor: pointer; }
+tbody tr.game:hover td { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+tr.game td:first-child { border-left: 4px solid var(--stripe, transparent); padding-left: 8px; }
+.when { color: var(--muted); font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.match { font: 600 1.15rem/1.1 var(--display); letter-spacing: .02em; white-space: nowrap; }
+.match .at { color: var(--muted); font-weight: 500; margin: 0 .2em; }
+.match small { display: block; font: 400 .75rem/1.3 var(--body); color: var(--muted); letter-spacing: 0; white-space: normal; }
+.rating { font: 700 1.35rem/1 var(--display); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rating.na { color: var(--muted); font-weight: 500; font-size: .95rem; }
+.verdict {
+  display: inline-block; padding: 3px 8px; border-radius: 6px; font: 600 .78rem/1.2 var(--body);
+  background: var(--tint); color: var(--ink); white-space: nowrap;
+}
+.v-now { --tint: var(--t-now); --ink: #fff; text-transform: uppercase; letter-spacing: .04em; }
+.v-full { --tint: var(--tint-full); --ink: var(--t-full); }
+.v-condensed { --tint: var(--tint-condensed); --ink: var(--t-condensed); }
+.v-highlights { --tint: transparent; --ink: var(--muted); padding-left: 0; }
+.v-pending { --tint: transparent; --ink: var(--muted); padding-left: 0; font-weight: 400; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .v-now { --ink: #1a0d06; } }
+:root[data-theme="dark"] .v-now { --ink: #1a0d06; }
+
+tr.detail td { background: color-mix(in srgb, var(--fg) 3%, var(--surface)); padding: 12px 12px 16px; }
+.detail-grid { display: grid; gap: 14px; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  font: 600 .85rem/1.2 var(--body);
+}
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.sub { font: 600 .74rem/1 var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+.mini { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.mini th, .mini td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.mini th { font-size: .7rem; padding-top: 0; }
+.mini td.num, .mini th.num { text-align: right; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); position: relative; min-width: 60px; }
+.bar b { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+.scroll-x { overflow-x: auto; }
+.finalscore { font: 700 1.6rem/1 var(--display); font-variant-numeric: tabular-nums; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.finalscore small { font: 400 .8rem/1 var(--body); color: var(--muted); }
+
+.empty-state, .error { padding: 24px 16px; text-align: center; color: var(--muted); }
+.error { color: var(--t-now); }
+footer { color: var(--muted); font-size: .78rem; line-height: 1.5; }
+footer p { margin: 0 0 6px; max-width: 65ch; }
+
+@media (max-width: 420px) {
+  .hide-sm { display: none; }
+  td, th { padding-left: 7px; padding-right: 7px; }
+  .match { font-size: 1.05rem; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  tr.detail td { animation: open .18s ease-out; }
+  @keyframes open { from { opacity: .4; } to { opacity: 1; } }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Replay <span>Rater</span></h1>
+    <div class="meta" id="meta">Loading…</div>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="View">
+    <button role="tab" id="tab-week" aria-selected="true" data-view="week">Week</button>
+    <button role="tab" id="tab-season" aria-selected="false" data-view="season">Season</button>
+    <button role="tab" id="tab-team" aria-selected="false" data-view="team">Team</button>
+  </div>
+
+  <nav class="weeks" id="weeks" aria-label="Weeks"></nav>
+  <div class="teamsel" id="teamsel" hidden>
+    <label for="team" class="meta">Team</label>
+    <select id="team"></select>
+  </div>
+
+  <section class="summary" id="summary"></section>
+
+  <div class="legend">
+    <span><b>100+</b> drop everything</span>
+    <span><b>80+</b> full replay, avoid spoilers</span>
+    <span><b>60+</b> condensed game</span>
+    <span><b>&lt;60</b> highlights, browse freely</span>
+  </div>
+
+  <div class="toolbar">
+    <label class="toggle"><input type="checkbox" id="reveal-all"> Show all scores</label>
+    <div class="sort" role="group" aria-label="Sort">
+      Sort
+      <button id="sort-rating" aria-pressed="true">Rating</button>
+      <button id="sort-time" aria-pressed="false">Kickoff</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Kickoff</th>
+          <th>Game</th>
+          <th style="text-align:right">Rating</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="4" class="empty-state">Loading games…</td></tr></tbody>
+    </table>
+  </div>
+
+  <footer>
+    <p>Ratings combine seven things worked out from each game's scoring plays: how close it finished, how late the winner went ahead for good, the biggest comeback, lead changes, total points, 40+ yard touchdowns and defensive or special-teams scores. A great game can rate above 100%.</p>
+    <p>Scores stay hidden until you tap Show score. Kickoff times are UK time. Data from ESPN, updated hourly.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var FACTOR_LABELS = {
+    close: "Close finish",
+    score_to_win: "Late winning score",
+    comeback: "Comeback",
+    lead_changes: "Lead changes",
+    high_scoring: "High scoring",
+    big_plays: "Big plays (40+ yd TDs)",
+    defence_st: "Defence / special teams scores"
+  };
+  var TIER_ORDER = ["now", "full", "condensed", "highlights"];
+  var TIER_NAMES = { now: "Watch now", full: "Full game", condensed: "Condensed", highlights: "Highlights" };
+  var POST_WEEKS = { 1: "WC", 2: "DIV", 3: "CONF", 5: "SB" };
+
+  var state = {
+    data: null, view: "week", week: null, team: "", sort: "rating",
+    tier: null, revealAll: false, open: {}, shown: {}, breakdown: {}
+  };
+
+  function store(key, val) {
+    try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); } catch (e) { return null; }
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var fmtKick = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short" });
+  var fmtTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
+
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "text") n.textContent = attrs[k];
+      else if (k === "style") n.setAttribute("style", attrs[k]);
+      else if (k.indexOf("on") === 0) n.addEventListener(k.slice(2), attrs[k]);
+      else n.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+
+  function weekKey(g) { return (g.season_type === 3 ? "p" : "w") + g.week; }
+  function weekLabel(key) {
+    var n = +key.slice(1);
+    return key[0] === "p" ? (POST_WEEKS[n] || "P" + n) : String(n);
+  }
+  function rated(g) { return g.rating !== null && g.rating !== undefined; }
+
+  function weeksList() {
+    var seen = {}, list = [];
+    state.data.games.forEach(function (g) {
+      if (g.season_type === 3 && g.week === 4) return; // Pro Bowl
+      var k = weekKey(g);
+      if (!seen[k]) { seen[k] = { key: k, games: 0, rated: 0 }; list.push(seen[k]); }
+      seen[k].games++; if (rated(g)) seen[k].rated++;
+    });
+    return list;
+  }
+
+  function latestWeek() {
+    var list = weeksList(), best = null;
+    list.forEach(function (w) { if (w.rated > 0) best = w.key; });
+    return best || (list[0] && list[0].key);
+  }
+
+  function teams() {
+    var m = {};
+    state.data.games.forEach(function (g) { [g.home, g.away].forEach(function (t) { m[t.abbr] = t.full || t.name; }); });
+    return Object.keys(m).sort().map(function (a) { return { abbr: a, name: m[a] }; });
+  }
+
+  function currentGames() {
+    var gs = state.data.games.filter(function (g) { return !(g.season_type === 3 && g.week === 4); });
+    if (state.view === "week") gs = gs.filter(function (g) { return weekKey(g) === state.week; });
+    else if (state.view === "season") gs = gs.filter(rated);
+    else if (state.view === "team") gs = gs.filter(function (g) { return state.team && (g.home.abbr === state.team || g.away.abbr === state.team); });
+    return gs;
+  }
+
+  function sorted(gs) {
+    var copy = gs.slice();
+    if (state.sort === "rating") {
+      copy.sort(function (a, b) {
+        var ra = rated(a) ? a.rating : -1, rb = rated(b) ? b.rating : -1;
+        return rb - ra || (a.date || "").localeCompare(b.date || "");
+      });
+    } else {
+      copy.sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
+    }
+    return copy;
+  }
+
+  // ----------------------------------------------------------------- render
+
+  function renderTabs() {
+    document.querySelectorAll(".tabs button").forEach(function (b) {
+      b.setAttribute("aria-selected", String(b.dataset.view === state.view));
+    });
+    $("weeks").hidden = state.view !== "week";
+    $("teamsel").hidden = state.view !== "team";
+    $("sort-rating").setAttribute("aria-pressed", String(state.sort === "rating"));
+    $("sort-time").setAttribute("aria-pressed", String(state.sort === "time"));
+    $("reveal-all").checked = state.revealAll;
+  }
+
+  function renderWeeks() {
+    var nav = $("weeks"); nav.textContent = "";
+    weeksList().forEach(function (w) {
+      var b = el("button", {
+        "aria-pressed": String(w.key === state.week),
+        "class": w.rated ? "" : "empty",
+        title: w.key[0] === "p" ? "Playoffs" : "Week " + weekLabel(w.key),
+        text: weekLabel(w.key),
+        onclick: function () { state.week = w.key; state.tier = null; go(); }
+      });
+      nav.appendChild(b);
+    });
+    var active = nav.querySelector('[aria-pressed="true"]');
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest", inline: "center" });
+  }
+
+  function renderTeams() {
+    var sel = $("team");
+    if (sel.options.length) return;
+    sel.appendChild(el("option", { value: "", text: "Choose a team" }));
+    teams().forEach(function (t) { sel.appendChild(el("option", { value: t.abbr, text: t.name + " (" + t.abbr + ")" })); });
+    sel.value = state.team;
+  }
+
+  function renderSummary(gs) {
+    var box = $("summary"); box.textContent = "";
+    var r = gs.filter(rated);
+    var title = state.view === "week"
+      ? (state.week[0] === "p" ? "Playoffs " + weekLabel(state.week) : "Week " + weekLabel(state.week))
+      : state.view === "season" ? state.data.season + " season" : (state.team || "Team");
+    var avg = r.length ? Math.round(r.reduce(function (s, g) { return s + g.rating; }, 0) / r.length) : null;
+
+    box.appendChild(el("div", null, [
+      el("div", { "class": "label", text: title + (state.view === "week" ? " rating" : " average") }),
+      el("div", { "class": "big", text: avg === null ? "–" : avg + "%" })
+    ]));
+
+    var chips = el("div", { "class": "chips", role: "group", "aria-label": "Filter by verdict" });
+    TIER_ORDER.forEach(function (t) {
+      var n = r.filter(function (g) { return g.tier === t; }).length;
+      if (!n) return;
+      chips.appendChild(el("button", {
+        "class": "chip", "aria-pressed": String(state.tier === t),
+        onclick: function () { state.tier = state.tier === t ? null : t; render(); }
+      }, [el("i", { style: "background:var(--t-" + t + ")" }), TIER_NAMES[t] + " " + n]));
+    });
+    box.appendChild(chips);
+  }
+
+  function verdict(g) {
+    if (rated(g)) return el("span", { "class": "verdict v-" + g.tier, text: g.tier_label });
+    if (g.state === "in") return el("span", { "class": "verdict v-pending", text: "In progress" });
+    if (g.state === "post") return el("span", { "class": "verdict v-pending", text: "Rating soon" });
+    return el("span", { "class": "verdict v-pending", text: "Upcoming" });
+  }
+
+  function gameRow(g) {
+    var d = g.date ? new Date(g.date) : null;
+    var when = d ? [el("div", { text: fmtKick.format(d) }), el("div", { text: fmtTime.format(d) })] : [];
+    var sub = state.view === "week" ? null : (g.season_type === 3 ? weekLabel(weekKey(g)) : "Week " + g.week);
+    var tr = el("tr", {
+      "class": "game", tabindex: "0", "aria-expanded": String(!!state.open[g.id]),
+      style: "--stripe:" + (rated(g) ? "var(--t-" + g.tier + ")" : "transparent"),
+      onclick: function () { toggle(g.id); },
+      onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(g.id); } }
+    }, [
+      el("td", { "class": "when" }, when),
+      el("td", null, [el("div", { "class": "match" }, [
+        g.away.abbr, el("span", { "class": "at", text: "@" }), g.home.abbr,
+        el("small", { text: g.away.name + " at " + g.home.name + (sub ? " · " + sub : "") })
+      ])]),
+      el("td", { "class": "rating" + (rated(g) ? "" : " na"), text: rated(g) ? Math.round(g.rating) + "%" : "–" }),
+      el("td", null, [verdict(g)])
+    ]);
+    return tr;
+  }
+
+  function factorTable(g) {
+    var w = state.data.weights;
+    var t = el("table", { "class": "mini" }, [
+      el("thead", null, [el("tr", null, [
+        el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { "class": "hide-sm", text: "" })
+      ])])
+    ]);
+    var tb = el("tbody");
+    Object.keys(FACTOR_LABELS).forEach(function (k) {
+      var v = (g.factors && g.factors[k]) || 0;
+      var pts = v * w[k];
+      tb.appendChild(el("tr", null, [
+        el("td", { text: FACTOR_LABELS[k] }),
+        el("td", { "class": "num", text: pts.toFixed(1) + " / " + w[k] }),
+        el("td", { "class": "hide-sm", style: "width:35%" }, [el("div", { "class": "bar" }, [el("b", { style: "width:" + Math.min(100, v * 100) + "%" })])])
+      ]));
+    });
+    t.appendChild(tb);
+    return t;
+  }
+
+  function scoreBlock(g) {
+    var frag = el("div", { "class": "detail-grid" });
+    var ot = g.ot ? " (OT)" : "";
+    frag.appendChild(el("div", { "class": "finalscore" }, [
+      g.away.abbr + " " + g.score_away + " – " + g.score_home + " " + g.home.abbr + ot,
+      el("small", { text: "Final" })
+    ]));
+
+    var nq = Math.max(g.lines_home.length, g.lines_away.length);
+    if (nq) {
+      var head = [el("th", { text: "" })];
+      for (var i = 0; i < nq; i++) head.push(el("th", { "class": "num", text: i < 4 ? "Q" + (i + 1) : "OT" }));
+      head.push(el("th", { "class": "num", text: "T" }));
+      var row = function (team, lines, total) {
+        var cells = [el("td", { text: team })];
+        for (var i = 0; i < nq; i++) cells.push(el("td", { "class": "num", text: lines[i] != null ? String(lines[i]) : "" }));
+        cells.push(el("td", { "class": "num", text: String(total) }));
+        return el("tr", null, cells);
+      };
+      frag.appendChild(el("div", { "class": "scroll-x" }, [el("table", { "class": "mini" }, [
+        el("thead", null, [el("tr", null, head)]),
+        el("tbody", null, [row(g.away.abbr, g.lines_away, g.score_away), row(g.home.abbr, g.lines_home, g.score_home)])
+      ])]));
+    }
+
+    if (g.plays && g.plays.length) {
+      var kinds = { td: "TD", fg: "FG", safety: "Safety" };
+      var body = el("tbody");
+      g.plays.forEach(function (p) {
+        var team = p.side === "home" ? g.home.abbr : g.away.abbr;
+        var what = (kinds[p.kind] || p.kind) + (p.yards && p.kind !== "safety" ? " " + p.yards + " yd" : "") + (p.defst ? " (D/ST)" : "");
+        body.appendChild(el("tr", null, [
+          el("td", { text: (p.period > 4 ? "OT" : "Q" + p.period) + (p.clock ? " " + p.clock : "") }),
+          el("td", { text: team }),
+          el("td", { text: what }),
+          el("td", { "class": "num", text: p.away + "–" + p.home })
+        ]));
+      });
+      frag.appendChild(el("div", null, [
+        el("p", { "class": "sub", text: "Scoring plays" }),
+        el("div", { "class": "scroll-x" }, [el("table", { "class": "mini" }, [
+          el("thead", null, [el("tr", null, [
+            el("th", { text: "Time" }), el("th", { text: "Team" }), el("th", { text: "Play" }),
+            el("th", { "class": "num", text: g.away.abbr + "–" + g.home.abbr })
+          ])]), body
+        ])])
+      ]));
+    }
+    return frag;
+  }
+
+  function detailRow(g) {
+    var td = el("td", { colspan: "4" });
+    var grid = el("div", { "class": "detail-grid" });
+    if (!rated(g)) {
+      grid.appendChild(el("div", { "class": "meta", text: g.state === "pre" ? "Not played yet." : "Rated once the game is final." }));
+    } else {
+      var showScore = state.revealAll || state.shown[g.id];
+      var showFactors = state.revealAll || state.breakdown[g.id];
+      var actions = el("div", { "class": "detail-actions" });
+      if (!showFactors) actions.appendChild(el("button", {
+        "class": "btn", text: "Show breakdown",
+        onclick: function (e) { e.stopPropagation(); state.breakdown[g.id] = true; render(); }
+      }));
+      if (!showScore) actions.appendChild(el("button", {
+        "class": "btn primary", text: "Show score",
+        onclick: function (e) { e.stopPropagation(); state.shown[g.id] = true; render(); }
+      }));
+      if (actions.childNodes.length) grid.appendChild(actions);
+      if (showFactors) grid.appendChild(el("div", null, [el("p", { "class": "sub", text: "Breakdown · " + g.rating.toFixed(1) + "%" }), factorTable(g)]));
+      if (showScore) grid.appendChild(scoreBlock(g));
+    }
+    td.appendChild(grid);
+    return el("tr", { "class": "detail" }, [td]);
+  }
+
+  function renderRows(gs) {
+    var tb = $("rows"); tb.textContent = "";
+    var list = sorted(gs);
+    if (state.tier) list = list.filter(function (g) { return g.tier === state.tier; });
+    if (!list.length) {
+      var msg = state.view === "team" && !state.team ? "Choose a team to see its games."
+        : state.view === "season" ? "No finished games yet this season." : "No games to show.";
+      tb.appendChild(el("tr", null, [el("td", { colspan: "4", "class": "empty-state", text: msg })]));
+      return;
+    }
+    list.forEach(function (g) {
+      tb.appendChild(gameRow(g));
+      if (state.open[g.id]) tb.appendChild(detailRow(g));
+    });
+  }
+
+  function renderMeta() {
+    var gen = new Date(state.data.generated);
+    var mins = Math.round((Date.now() - gen.getTime()) / 60000);
+    var ago = mins < 1 ? "just now" : mins < 60 ? mins + " min ago" : mins < 1440 ? Math.round(mins / 60) + " h ago" : Math.round(mins / 1440) + " days ago";
+    $("meta").textContent = state.data.season + " season · updated " + ago;
+  }
+
+  function render() {
+    renderTabs();
+    if (state.view === "week") renderWeeks();
+    if (state.view === "team") renderTeams();
+    var gs = currentGames();
+    renderSummary(gs);
+    renderRows(gs);
+  }
+
+  function toggle(id) { state.open[id] = !state.open[id]; render(); }
+
+  // ----------------------------------------------------------------- routing
+
+  function go() {
+    var h = state.view === "season" ? "season" : state.view === "team" ? "team" + (state.team ? "-" + state.team : "") : state.week;
+    if (location.hash.slice(1) !== h) history.replaceState(null, "", "#" + h);
+    render();
+  }
+
+  function fromHash() {
+    var h = location.hash.slice(1);
+    if (h === "season") state.view = "season";
+    else if (h.indexOf("team") === 0) { state.view = "team"; state.team = h.split("-")[1] || store("rr-team") || ""; }
+    else if (/^[wp]\d+$/.test(h)) { state.view = "week"; state.week = h; }
+  }
+
+  document.querySelectorAll(".tabs button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      state.view = b.dataset.view; state.tier = null;
+      if (state.view === "team" && !state.team) state.team = store("rr-team") || "";
+      go();
+    });
+  });
+  $("team").addEventListener("change", function (e) { state.team = e.target.value; store("rr-team", state.team); state.tier = null; go(); });
+  $("sort-rating").addEventListener("click", function () { state.sort = "rating"; store("rr-sort", "rating"); render(); });
+  $("sort-time").addEventListener("click", function () { state.sort = "time"; store("rr-sort", "time"); render(); });
+  $("reveal-all").addEventListener("change", function (e) { state.revealAll = e.target.checked; store("rr-reveal", e.target.checked ? "1" : "0"); render(); });
+  window.addEventListener("hashchange", function () { fromHash(); render(); });
+
+  state.sort = store("rr-sort") === "time" ? "time" : "rating";
+  state.revealAll = store("rr-reveal") === "1";
+
+  fetch("data.json", { cache: "no-cache" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (data) {
+      state.data = data;
+      state.week = latestWeek();
+      fromHash();
+      if (!state.week) state.week = latestWeek();
+      renderMeta();
+      go();
+    })
+    .catch(function (err) {
+      $("meta").textContent = "";
+      $("rows").textContent = "";
+      $("rows").appendChild(el("tr", null, [el("td", { colspan: "4", "class": "error",
+        text: "Couldn't load the ratings (" + err.message + "). The first update may not have run yet; check the Actions tab on GitHub." })]));
+    });
+})();
+</script>
+</body>
+</html>
