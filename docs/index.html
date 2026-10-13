@@ -132,6 +132,7 @@ tr.game td:first-child { border-left: 4px solid var(--stripe, transparent); padd
 .match small { display: block; font: 400 .75rem/1.3 var(--body); color: var(--muted); letter-spacing: 0; white-space: normal; }
 .rating { font: 700 1.35rem/1 var(--display); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rating.na { color: var(--muted); font-weight: 500; font-size: .95rem; }
+.stk { font: 500 .72rem/1.3 var(--body); color: var(--muted); letter-spacing: 0; margin-top: 3px; white-space: nowrap; }
 .verdict {
   display: inline-block; padding: 3px 8px; border-radius: 6px; font: 600 .78rem/1.2 var(--body);
   background: var(--tint); color: var(--ink); white-space: nowrap;
@@ -218,6 +219,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
       Sort
       <button id="sort-rating" aria-pressed="true">Rating</button>
       <button id="sort-time" aria-pressed="false">Kickoff</button>
+      <button id="sort-stakes" aria-pressed="false">Stakes</button>
     </div>
   </div>
 
@@ -227,7 +229,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
         <tr>
           <th>Kickoff</th>
           <th>Game</th>
-          <th style="text-align:right">Rating</th>
+          <th style="text-align:right">Quality</th>
           <th>Verdict</th>
         </tr>
       </thead>
@@ -236,7 +238,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   </div>
 
   <footer>
-    <p>Ratings combine seven things worked out from each game's scoring plays: how close it finished, how late the winner went ahead for good, the biggest comeback, lead changes, total points, 40+ yard touchdowns and defensive or special-teams scores. A great game can rate above 100%.</p>
+    <p>Quality rates how good a game was to watch: a shootout or a defensive battle, how much of the second half was within one score, lead changes, upsets, the finish, comebacks, big plays and defensive or special-teams scores. A great game can rate above 100%.</p>
+    <p>Stakes (0–100) measures before kickoff how much the result swung each team's chances of making the playoffs, winning the division or taking the 1 seed. High stakes move the verdict up a tier; nothing on the line moves it down one. Playoff games always count as high stakes.</p>
     <p>Scores stay hidden until you tap Show score. Kickoff times are UK time. Data from ESPN, updated hourly.</p>
   </footer>
 </div>
@@ -246,14 +249,17 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   "use strict";
 
   var FACTOR_LABELS = {
-    high_scoring: "High scoring",
+    style: "Shootout or defensive battle",
+    nail_biter: "Nail-biter (2nd half within one score)",
     lead_changes: "Lead changes",
-    big_plays: "Big plays (40+ yd TDs)",
-    defence_st: "Defence / special teams scores",
+    upset: "Upset",
     close: "Close finish",
     score_to_win: "Late winning score",
-    comeback: "Comeback"
+    comeback: "Comeback",
+    big_plays: "Big plays (40+ yd TDs)",
+    defence_st: "Defence / special teams scores"
   };
+  var TIER_RANK = { now: 0, full: 1, condensed: 2, highlights: 3 };
   var TIER_ORDER = ["now", "full", "condensed", "highlights"];
   var TIER_NAMES = { now: "Watch now", full: "Full game", condensed: "Condensed", highlights: "Highlights" };
   var POST_WEEKS = { 1: "WC", 2: "DIV", 3: "CONF", 5: "SB" };
@@ -334,9 +340,15 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   function sorted(gs) {
     var copy = gs.slice();
     if (state.sort === "rating") {
+      // Verdict first (after the stakes shift), then quality.
       copy.sort(function (a, b) {
+        var ta = rated(a) ? TIER_RANK[a.tier] : 9, tb = rated(b) ? TIER_RANK[b.tier] : 9;
         var ra = rated(a) ? a.rating : -1, rb = rated(b) ? b.rating : -1;
-        return rb - ra || (a.date || "").localeCompare(b.date || "");
+        return ta - tb || rb - ra || (a.date || "").localeCompare(b.date || "");
+      });
+    } else if (state.sort === "stakes") {
+      copy.sort(function (a, b) {
+        return (b.stakes == null ? -1 : b.stakes) - (a.stakes == null ? -1 : a.stakes) || (a.date || "").localeCompare(b.date || "");
       });
     } else {
       copy.sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
@@ -354,6 +366,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     $("teamsel").hidden = state.view !== "team";
     $("sort-rating").setAttribute("aria-pressed", String(state.sort === "rating"));
     $("sort-time").setAttribute("aria-pressed", String(state.sort === "time"));
+    $("sort-stakes").setAttribute("aria-pressed", String(state.sort === "stakes"));
     $("reveal-all").checked = state.revealAll;
     $("season").value = String(state.season);
   }
@@ -431,7 +444,13 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   }
 
   function verdict(g) {
-    if (rated(g)) return el("span", { "class": "verdict v-" + g.tier, text: g.tier_label });
+    if (rated(g)) {
+      var note = g.shift > 0 ? "▲ stakes" : g.shift < 0 ? "▼ nothing on the line" : null;
+      return el("div", null, [
+        el("span", { "class": "verdict v-" + g.tier, text: g.tier_label }),
+        note ? el("div", { "class": "stk", text: note }) : null
+      ]);
+    }
     if (g.state === "in") return el("span", { "class": "verdict v-pending", text: "In progress" });
     if (g.state === "post" && !g.completed) return el("span", { "class": "verdict v-pending", text: "Not played" });
     if (g.state === "post") return el("span", { "class": "verdict v-pending", text: "Rating soon" });
@@ -453,7 +472,10 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
         g.away.abbr, el("span", { "class": "at", text: "@" }), g.home.abbr,
         el("small", { text: g.away.name + " at " + g.home.name + (sub ? " · " + sub : "") })
       ])]),
-      el("td", { "class": "rating" + (rated(g) ? "" : " na"), text: rated(g) ? Math.round(g.rating) + "%" : "–" }),
+      el("td", { "class": "rating" + (rated(g) ? "" : " na") }, [
+        rated(g) ? Math.round(g.rating) + "%" : "–",
+        g.stakes != null ? el("div", { "class": "stk", text: "stakes " + Math.round(g.stakes) }) : null
+      ]),
       el("td", null, [verdict(g)])
     ]);
   }
@@ -467,8 +489,10 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     Object.keys(FACTOR_LABELS).forEach(function (k) {
       if (!(k in w)) return;
       var v = (g.factors && g.factors[k]) || 0;
+      var label = k === "style" ? (g.style_kind === "defensive" ? "Defensive battle" : "Shootout")
+        : k === "upset" && g.upset_source === "form" ? "Upset (by form, no betting line)" : FACTOR_LABELS[k];
       tb.appendChild(el("tr", null, [
-        el("td", { text: FACTOR_LABELS[k] }),
+        el("td", { text: label }),
         el("td", { "class": "num", text: (v * w[k]).toFixed(1) + " / " + w[k] }),
         el("td", { "class": "hide-sm", style: "width:35%" }, [el("div", { "class": "bar" }, [el("b", { style: "width:" + Math.min(100, v * 100) + "%" })])])
       ]));
@@ -545,7 +569,15 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
         onclick: function (e) { e.stopPropagation(); state.shown[g.id] = true; render(); }
       }));
       if (actions.childNodes.length) grid.appendChild(actions);
-      if (showFactors) grid.appendChild(el("div", null, [el("p", { "class": "sub", text: "Breakdown · " + g.rating.toFixed(1) + "%" }), factorTable(g)]));
+      if (showFactors) {
+        var stakesLine = g.stakes == null ? "Stakes not available for this game."
+          : "Stakes " + Math.round(g.stakes) + " / 100" + (g.season_type === 3 ? " (playoff game)" : " (swing in playoff, division and 1-seed odds)") +
+            (g.shift > 0 ? ". Verdict moved up one tier." : g.shift < 0 ? ". Nothing on the line, so the verdict moved down one tier." : ".");
+        grid.appendChild(el("div", null, [
+          el("p", { "class": "sub", text: "Quality · " + g.rating.toFixed(1) + "%" }), factorTable(g),
+          el("p", { "class": "meta", style: "margin:10px 0 0", text: stakesLine })
+        ]));
+      }
       if (showScore) grid.appendChild(scoreBlock(g));
     }
     return el("tr", { "class": "detail" }, [el("td", { colspan: "4" }, [grid])]);
@@ -648,6 +680,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   $("team").addEventListener("change", function (e) { state.team = e.target.value; go(); });
   $("sort-rating").addEventListener("click", function () { state.sort = "rating"; store("rr-sort", "rating"); render(); });
   $("sort-time").addEventListener("click", function () { state.sort = "time"; store("rr-sort", "time"); render(); });
+  $("sort-stakes").addEventListener("click", function () { state.sort = "stakes"; store("rr-sort", "stakes"); render(); });
   $("reveal-all").addEventListener("change", function (e) { state.revealAll = e.target.checked; store("rr-reveal", e.target.checked ? "1" : "0"); render(); });
   window.addEventListener("hashchange", function () {
     var h = parseHash();
@@ -655,7 +688,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     if (h.season && h.season !== state.season) setSeason(h.season, true).catch(showError); else render();
   });
 
-  state.sort = store("rr-sort") === "time" ? "time" : "rating";
+  state.sort = ["time", "stakes"].indexOf(store("rr-sort")) >= 0 ? store("rr-sort") : "rating";
   state.revealAll = store("rr-reveal") === "1";
   state.tier = TIER_ORDER.indexOf(store("rr-tier")) >= 0 ? store("rr-tier") : null;
 

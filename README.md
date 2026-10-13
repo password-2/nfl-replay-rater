@@ -19,23 +19,33 @@ watch the full replay, the condensed game or just the highlights.
 | 60-80 | Condensed (40m) |
 | under 60 | Highlights (5m), browse freely |
 
-## Rating factors
+## Two scores
 
-Every game gets 10 base points, plus each factor's points at full strength
-(factors can reach 125%, so games can exceed 100). Weights were calibrated
-against nflgamerater.com's published 2026 Week 1 ratings.
+**Quality** (how good the game was to watch): 10 base points plus each factor's
+points at full strength. Factors cap at 125%, so quality can pass 100.
 
 | Factor | Points | Full strength at |
 | --- | --- | --- |
-| High scoring | 30 | 54 total points |
-| Lead changes | 15 | 4 lead changes (a tie counts as half) |
-| Big plays | 15 | Two touchdowns of 40+ yards |
-| Defence / special teams | 15 | 1.5 defensive or return touchdowns / safeties |
-| Close finish | 12 | Tied / 1-point margin; +25% for overtime |
-| Late winning score | 10 | Winner went ahead for good in the last 2 minutes (OT = 125%) |
-| Comeback | 10 | Winner overcame a 14-point deficit |
+| Shootout or defensive battle | 26 | 54 total points, or a close game with 20 or fewer (whichever scores higher) |
+| Nail-biter | 14 | Whole second half within 8 points (Q4/OT count double) |
+| Lead changes | 10 | 4 lead changes (a tie counts as half) |
+| Upset | 10 | A 9-point underdog wins (betting line; falls back to form) |
+| Close finish | 8 | Tied / 1-point margin; +25% for overtime |
+| Late winning score | 8 | Winner went ahead for good in the last 2 minutes (OT = 125%) |
+| Comeback | 8 | Winner overcame a 14-point deficit |
+| Big plays | 8 | Two touchdowns of 40+ yards |
+| Defence / special teams | 8 | 1.5 defensive or return touchdowns / safeties |
 
-Tune `BASE_POINTS`, `WEIGHTS` and the divisors in `rate()` in `scripts/build.py`.
+**Stakes** (0-100, measured before kickoff): standings are rebuilt from earlier
+results, the rest of the season is simulated 1,500 times, and the game's score is
+the swing in both teams' chances of making the playoffs, winning the division
+and taking the 1 seed. Playoff games score 70 (Wild Card) to 100 (Super Bowl).
+
+**Verdict** comes from quality, moved up one tier when stakes are 60+ and down
+one tier when stakes are under 8.
+
+Tune `WEIGHTS`, `STAKES_HIGH` and `STAKES_DEAD` in `scripts/build.py`, and
+`LEVERAGE_FULL` in `scripts/stakes.py`.
 
 ## Setup
 

@@ -17,38 +17,63 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from stakes import season_stakes  # noqa: E402
+
 BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Points each factor is worth at full strength (factor score 1.0), plus a
-# base that every game gets. Factor scores are capped at 1.25, so a game can
-# rate above 100%. Calibrated against nflgamerater.com's published 2026 Week 1
-# ratings (five games within ~6 points, week average 55% vs 54%).
+# QUALITY: points each factor is worth at full strength (factor score 1.0),
+# plus a base every game gets. Factors cap at 1.25, so quality can pass 100.
+# Starting weights; to be refitted to Adam's own verdicts.
 BASE_POINTS = 10
 WEIGHTS = {
-    "high_scoring": 30,   # Total points
-    "lead_changes": 15,   # Lead changes and ties
-    "big_plays": 15,      # Touchdowns of 40+ yards
-    "defence_st": 15,     # Defensive / special teams scores and safeties
-    "close": 12,          # Close game: final margin, overtime
-    "score_to_win": 10,   # How late the winner took the lead for good
-    "comeback": 10,       # Biggest deficit the winner overcame
+    "style": 26,          # Shootout or defensive battle, whichever is stronger
+    "nail_biter": 14,     # Share of the second half played within one score
+    "lead_changes": 10,   # Lead changes and ties
+    "upset": 10,          # Underdog won (betting line, else form)
+    "close": 8,           # Final margin, overtime
+    "score_to_win": 8,    # How late the winner took the lead for good
+    "comeback": 8,        # Biggest deficit the winner overcame
+    "big_plays": 8,       # Touchdowns of 40+ yards
+    "defence_st": 8,      # Defensive / special teams scores and safeties
 }
 CAP = 1.25
 
-TIERS = [  # (minimum rating, key, short label)
+TIERS = [  # (minimum quality, key, short label)
     (100, "now", "WATCH THIS NOW"),
     (80, "full", "Full game (2h)"),
     (60, "condensed", "Condensed (40m)"),
     (0, "highlights", "Highlights (5m)"),
 ]
+TIER_KEYS = [t[1] for t in TIERS]          # best first
+TIER_LABEL = {t[1]: t[2] for t in TIERS}
+
+# STAKES (0-100, measured before kickoff) moves the verdict one tier.
+STAKES_HIGH = 60   # at or above: up one tier
+STAKES_DEAD = 8    # below: down one tier (nothing on the line)
+STAKES_VERSION = 1
 
 
-def tier_for(rating):
+def tier_for(quality):
     for floor, key, label in TIERS:
-        if rating >= floor:
+        if quality >= floor:
             return key, label
     return TIERS[-1][1], TIERS[-1][2]
+
+
+def verdict(quality, stakes):
+    """Returns (base tier, final tier, shift). shift is +1, 0 or -1."""
+    base, _ = tier_for(quality)
+    shift = 0
+    if stakes is not None:
+        if stakes >= STAKES_HIGH:
+            shift = 1
+        elif stakes < STAKES_DEAD:
+            shift = -1
+    i = TIER_KEYS.index(base)
+    j = min(len(TIER_KEYS) - 1, max(0, i - shift))
+    return base, TIER_KEYS[j], (i - j)
 
 
 # ---------------------------------------------------------------- fetching
@@ -185,17 +210,89 @@ def remaining_regulation(period, secs):
     return (4 - period) * 900 + secs
 
 
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_extras(summary, game):
+    """Box-score takeaways/sacks and the pre-game betting line, when present."""
+    box = {}
+    for t in (summary.get("boxscore") or {}).get("teams", []):
+        abbr = (t.get("team") or {}).get("abbreviation")
+        side = "home" if abbr == game["home"]["abbr"] else "away" if abbr == game["away"]["abbr"] else None
+        if not side:
+            continue
+        stats = {s.get("name"): s for s in t.get("statistics", [])}
+        to = stats.get("turnovers") or stats.get("totalTurnovers")
+        sk = stats.get("sacksYardsLost")
+        box[side] = {
+            "turnovers": _num((to or {}).get("value", (to or {}).get("displayValue"))),
+            "sacked": _num(((sk or {}).get("displayValue") or "").split("-")[0]),
+        }
+
+    odds = None
+    for pc in summary.get("pickcenter") or []:
+        fav = None
+        if (pc.get("homeTeamOdds") or {}).get("favorite"):
+            fav = "home"
+        elif (pc.get("awayTeamOdds") or {}).get("favorite"):
+            fav = "away"
+        spread = _num(pc.get("spread"))
+        details = pc.get("details") or ""
+        m = re.match(r"([A-Z]{2,4})\s+(-?\d+(?:\.\d+)?)", details)
+        if m:
+            fav = fav or ("home" if m.group(1) == game["home"]["abbr"] else "away" if m.group(1) == game["away"]["abbr"] else None)
+            spread = spread if spread is not None else _num(m.group(2))
+        if details.upper() == "EVEN":
+            fav, spread = "home", 0.0
+        if fav and spread is not None:
+            odds = {"favorite": fav, "spread": abs(spread)}
+            break
+    return {"box": box or None, "odds": odds}
+
+
 # ---------------------------------------------------------------- rating
 
 def clamp(x, lo=0.0, hi=CAP):
     return max(lo, min(hi, x))
 
 
-def rate(game, events):
+def elapsed(period, secs):
+    if period <= 4:
+        return (period - 1) * 900 + (900 - secs)
+    return 3600 + (period - 5) * 600 + (600 - secs)
+
+
+def nail_biter_share(events, ot):
+    """Weighted share of the second half (Q4 and OT count double) within 8 points."""
+    if not events:
+        return 0.0
+    end = max(3600, elapsed(events[-1]["period"], events[-1]["secs"])) if ot else 3600
+    marks = [(elapsed(e["period"], e["secs"]), e["home"] - e["away"]) for e in events]
+    t, diff, num, den = 0.0, 0, 0.0, 0.0
+    for t_next, d_next in marks + [(end, None)]:
+        lo, hi = max(t, 1800), min(t_next, end)
+        if hi > lo:
+            for a, b, w in ((lo, min(hi, 2700), 1.0), (max(lo, 2700), hi, 2.0)):
+                if b > a:
+                    den += (b - a) * w
+                    if abs(diff) <= 8:
+                        num += (b - a) * w
+        t = max(t, t_next)
+        if d_next is not None:
+            diff = d_next
+    return num / den if den else 0.0
+
+
+def rate(game, events, extra=None, exp_margin=None):
     H, A = game["score_home"], game["score_away"]
     total, margin = H + A, abs(H - A)
     ot = len(game.get("lines_home", [])) > 4 or any(e["period"] > 4 for e in events)
     winner = "home" if H > A else "away" if A > H else None
+    extra = extra or {}
 
     prev_sign, last_nonzero, changes, ties = 0, 0, 0, 0
     max_def = {"home": 0, "away": 0}
@@ -229,19 +326,48 @@ def rate(game, events):
 
     comeback = max_def[winner] if winner else max(max_def.values())
 
+    # Shootout vs defensive battle: count whichever is stronger.
+    shootout = clamp((total - 24) / 30)
+    low = clamp((37 - total) / 17, 0, 1)
+    tight = clamp(1 - margin / 14, 0, 1)
+    box = extra.get("box") or {}
+    takeaways = sum((box.get(s) or {}).get("turnovers") or 0 for s in ("home", "away"))
+    sacks = sum((box.get(s) or {}).get("sacked") or 0 for s in ("home", "away"))
+    defensive = clamp(low * tight + 0.25 * low * clamp((takeaways + sacks / 3) / 6, 0, 1))
+    style = max(shootout, defensive)
+
+    # Upset: underdog by the betting line if we have it, else by form.
+    upset, dog_by, line_source = 0.0, None, None
+    odds = extra.get("odds")
+    if odds and odds["spread"] > 0:
+        dog = "away" if odds["favorite"] == "home" else "home"
+        dog_by, line_source = odds["spread"], "line"
+    elif exp_margin is not None and abs(exp_margin) >= 1:
+        dog = "away" if exp_margin > 0 else "home"
+        dog_by, line_source = abs(exp_margin), "form"
+    if dog_by:
+        if winner == dog:
+            upset = clamp(dog_by / 9)
+        elif winner is None:
+            upset = clamp(dog_by / 18)
+
     factors = {
+        "style": round(style, 3),
+        "nail_biter": round(clamp(nail_biter_share(events, ot), 0, 1), 3),
+        "lead_changes": round(clamp((changes + 0.5 * ties) / 4), 3),
+        "upset": round(upset, 3),
         "close": round(clamp(close), 3),
         "score_to_win": round(clamp(stw), 3),
         "comeback": round(clamp(comeback / 14), 3),
-        "lead_changes": round(clamp((changes + 0.5 * ties) / 4), 3),
-        "high_scoring": round(clamp((total - 24) / 30), 3),
         "big_plays": round(clamp(sum(1 for e in events if e["kind"] == "td" and e["yards"] >= 40) / 2), 3),
         "defence_st": round(clamp(sum(1 for e in events if e["defst"]) / 1.5), 3),
     }
-    rating = round(BASE_POINTS + sum(WEIGHTS[k] * v for k, v in factors.items()), 1)
+    quality = round(BASE_POINTS + sum(WEIGHTS[k] * v for k, v in factors.items()), 1)
     return {
-        "rating": rating,
+        "rating": quality,
         "factors": factors,
+        "style_kind": "defensive" if defensive > shootout else "shootout",
+        "upset_source": line_source,
         "ot": ot,
         "lead_changes": changes,
         "ties": ties,
@@ -297,12 +423,14 @@ def cache_path(year):
     return os.path.join(ROOT, "data", f"cache-{year}.json")
 
 
-def summarise(g, r):
+def summarise(g, r, stakes):
     """Game row for the page. Never includes a score unless finished and rated."""
     row = dict(g)
+    row["stakes"] = stakes
     if r:
-        row.update({k: r[k] for k in ("rating", "factors", "ot", "lead_changes", "ties")})
-        row["tier"], row["tier_label"] = tier_for(r["rating"])
+        row.update({k: r[k] for k in ("rating", "factors", "style_kind", "upset_source", "ot", "lead_changes", "ties")})
+        base, final, shift = verdict(r["rating"], stakes)
+        row.update({"tier_base": base, "tier": final, "tier_label": TIER_LABEL[final], "shift": shift})
         row["plays"] = [
             {k: e[k] for k in ("side", "kind", "pts", "yards", "period", "clock", "home", "away", "defst")}
             for e in r["events"] if e["kind"] != "conv"
@@ -325,6 +453,7 @@ def build_season(year, fetch, cur=None):
     cache = cache or {}
     games = cache.get("games", {})
     events = {k: v["events"] for k, v in cache.get("rated", {}).items()}
+    extras = cache.get("extras", {})
 
     if fetch:
         jobs = [(year, 2, w) for w in range(1, 19)]
@@ -336,30 +465,39 @@ def build_season(year, fetch, cur=None):
             for g in wk:
                 games[g["id"]] = g
 
-        todo = [g for g in games.values() if g["completed"] and g["id"] not in events]
+        todo = [g for g in games.values() if g["completed"] and (g["id"] not in events or g["id"] not in extras)]
         print(f"{year}: {len(games)} games, {len(todo)} to fetch")
 
         def work(g):
             try:
-                return g["id"], scoring_events(fetch_summary(g["id"]))
+                summ = fetch_summary(g["id"])
+                return g["id"], scoring_events(summ), parse_extras(summ, g)
             except Exception as exc:  # noqa: BLE001
                 print(f"summary failed {g['id']}: {exc}", file=sys.stderr)
-                return g["id"], None
+                return g["id"], None, None
 
         with ThreadPoolExecutor(max_workers=6) as pool:
-            for gid, ev in pool.map(work, todo):
+            for gid, ev, ex in pool.map(work, todo):
                 if ev is None:
                     continue
+                extras[gid] = ex
                 g = games[gid]
                 if ev and (ev[-1]["home"], ev[-1]["away"]) != (g["score_home"], g["score_away"]):
                     print(f"warning {gid}: plays end {ev[-1]['home']}-{ev[-1]['away']}, "
                           f"final {g['score_home']}-{g['score_away']}", file=sys.stderr)
                 events[gid] = ev
 
+    # Stakes: recomputed for the live season; cached for finished ones.
+    st_cache = cache.get("stakes")
+    if fetch or cur is not None or not st_cache or cache.get("stakes_version") != STAKES_VERSION:
+        st_cache = season_stakes(list(games.values()))
+    stakes = {gid: v["stakes"] for gid, v in st_cache.items()}
+    exp_margin = {gid: v.get("exp_margin") for gid, v in st_cache.items()}
+
     # Re-rate every finished game each run so weight changes apply everywhere.
-    rated = {gid: {**rate(games[gid], ev), "events": ev}
+    rated = {gid: {**rate(games[gid], ev, extras.get(gid), exp_margin.get(gid)), "events": ev}
              for gid, ev in events.items() if gid in games and games[gid]["completed"]}
-    rows = [summarise(g, rated.get(g["id"]))
+    rows = [summarise(g, rated.get(g["id"]), stakes.get(g["id"]))
             for g in sorted(games.values(), key=lambda x: (x["season_type"], x["week"], x["date"] or ""))
             if not (g["season_type"] == 3 and g["week"] == 4)]  # drop the Pro Bowl
 
@@ -369,6 +507,8 @@ def build_season(year, fetch, cur=None):
         "season": year,
         "current": cur is not None,
         "base_points": BASE_POINTS,
+        "stakes_high": STAKES_HIGH,
+        "stakes_dead": STAKES_DEAD,
         "weights": WEIGHTS,
         "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
         "games": rows,
@@ -378,7 +518,8 @@ def build_season(year, fetch, cur=None):
         json.dump(payload, f, separators=(",", ":"))
 
     cache.update({"games": games, "rated": {k: {"events": v["events"]} for k, v in rated.items()},
-                  "complete": complete})
+                  "extras": extras, "stakes": st_cache, "stakes_version": STAKES_VERSION,
+                  "complete": complete and all(gid in extras for gid in rated)})
     return cache, rows, games
 
 
@@ -398,7 +539,7 @@ def main():
     seasons = []
     for y in range(FIRST_SEASON, year):
         cached = load_json(cache_path(y), {})
-        cache, rows, _ = build_season(y, fetch=not cached.get("complete"))
+        cache, rows, _ = build_season(y, fetch=not cached.get("complete") or "extras" not in cached)
         save_cache(y, cache)
         if rows:
             seasons.append(y)
