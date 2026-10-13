@@ -112,7 +112,7 @@ def season_stakes(games, seed_value=7):
         before = [g for g in reg if g["week"] < week]
         if not this_week:
             continue
-        if any(not g["completed"] for g in before):
+        if any(not g["completed"] and g.get("state") != "post" for g in before):
             break  # standings before this week aren't final yet
         try:
             pairs = [(norm(g["home"]["abbr"]), norm(g["away"]["abbr"])) for g in reg]
@@ -124,6 +124,8 @@ def season_stakes(games, seed_value=7):
         base = Table()
         results = []
         for g in before:
+            if not g["completed"]:
+                continue  # cancelled game
             h, a = norm(g["home"]["abbr"]), norm(g["away"]["abbr"])
             hs, as_ = g["score_home"], g["score_away"]
             base.add(h, a, 1.0 if hs > as_ else 0.0 if as_ > hs else 0.5)

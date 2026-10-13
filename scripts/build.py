@@ -52,7 +52,8 @@ TIER_LABEL = {t[1]: t[2] for t in TIERS}
 # STAKES (0-100, measured before kickoff) moves the verdict one tier.
 STAKES_HIGH = 60   # at or above: up one tier
 STAKES_DEAD = 8    # below: down one tier (nothing on the line)
-STAKES_VERSION = 1
+STAKES_VERSION = 2
+EXTRAS_VERSION = 2
 
 
 def tier_for(quality):
@@ -226,12 +227,15 @@ def parse_extras(summary, game):
         if not side:
             continue
         stats = {s.get("name"): s for s in t.get("statistics", [])}
-        to = stats.get("turnovers") or stats.get("totalTurnovers")
-        sk = stats.get("sacksYardsLost")
-        box[side] = {
-            "turnovers": _num((to or {}).get("value", (to or {}).get("displayValue"))),
-            "sacked": _num(((sk or {}).get("displayValue") or "").split("-")[0]),
-        }
+        def val(name):
+            st = stats.get(name) or {}
+            v = _num(st.get("value"))
+            return v if v is not None else _num(st.get("displayValue"))
+        to = val("turnovers")
+        if to is None and (val("fumblesLost") is not None or val("interceptions") is not None):
+            to = (val("fumblesLost") or 0) + (val("interceptions") or 0)
+        sk = stats.get("sacksYardsLost") or {}
+        box[side] = {"turnovers": to, "sacked": _num((sk.get("displayValue") or "").split("-")[0])}
 
     odds = None
     for pc in summary.get("pickcenter") or []:
@@ -453,7 +457,7 @@ def build_season(year, fetch, cur=None):
     cache = cache or {}
     games = cache.get("games", {})
     events = {k: v["events"] for k, v in cache.get("rated", {}).items()}
-    extras = cache.get("extras", {})
+    extras = cache.get("extras", {}) if cache.get("extras_version") == EXTRAS_VERSION else {}
 
     if fetch:
         jobs = [(year, 2, w) for w in range(1, 19)]
@@ -518,7 +522,7 @@ def build_season(year, fetch, cur=None):
         json.dump(payload, f, separators=(",", ":"))
 
     cache.update({"games": games, "rated": {k: {"events": v["events"]} for k, v in rated.items()},
-                  "extras": extras, "stakes": st_cache, "stakes_version": STAKES_VERSION,
+                  "extras": extras, "extras_version": EXTRAS_VERSION, "stakes": st_cache, "stakes_version": STAKES_VERSION,
                   "complete": complete and all(gid in extras for gid in rated)})
     return cache, rows, games
 
@@ -539,7 +543,7 @@ def main():
     seasons = []
     for y in range(FIRST_SEASON, year):
         cached = load_json(cache_path(y), {})
-        cache, rows, _ = build_season(y, fetch=not cached.get("complete") or "extras" not in cached)
+        cache, rows, _ = build_season(y, fetch=not cached.get("complete") or cached.get("extras_version") != EXTRAS_VERSION)
         save_cache(y, cache)
         if rows:
             seasons.append(y)
