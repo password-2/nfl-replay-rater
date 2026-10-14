@@ -113,5 +113,7 @@ def dazn_rule_fingerprint():
     except Exception:  # noqa: BLE001
         return None, None
     key = [l for l in lines if re.search(r"black|18:00|21:00|6pm|9pm|Wednesday|two", l, re.I)]
+    if not any(re.search(r"black", l, re.I) for l in key):
+        return None, None  # page content not served to us (built in the browser): unknown, not a failure
     ok = any("18:00" in l or "6pm" in l.lower() for l in key) and any("21:00" in l or "9pm" in l.lower() for l in key)
     return hashlib.sha1("\n".join(key).encode()).hexdigest()[:12], ok
