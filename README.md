@@ -58,6 +58,15 @@ scores). Votes are saved on the phone and posted to a public ntfy topic
 (`FEEDBACK_TOPIC` in `scripts/build.py`); the hourly job collects them into
 `docs/data/feedback.json`, which is what the weights get refitted against.
 
+## Sky and DAZN
+
+Each hour the job reads Sky Sports' weekly "NFL live on Sky Sports" article and
+marks upcoming games it shows. DAZN's UK rule: two Sunday games a week are not
+live on DAZN, one in the 6pm slot and one in the 9pm slot. The Sky Sports NFL
+game in each slot is marked as the likely blackout; any other Sky game in the
+same slot is marked unclear. A push goes out once per week when Sky's list
+first appears. Logic in `scripts/sky.py`.
+
 ## Off-season
 
 The job commits a small heartbeat to `data/state.json` once a month, so GitHub

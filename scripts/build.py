@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stakes import season_stakes  # noqa: E402
+import sky  # noqa: E402
 
 BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -518,6 +519,53 @@ def collect_feedback(valid_ids):
     write_json_if_changed(path, fb, ignore=("seen",))
 
 
+def update_sky(year, rows, state):
+    """Record which upcoming games Sky shows, and push once per week when Sky publishes."""
+    path = os.path.join(DATA_DIR, "sky.json")
+    data = load_json(path, {"games": {}})
+    try:
+        found = sky.sky_games(rows)
+    except Exception as exc:  # noqa: BLE001
+        print(f"sky fetch failed: {exc}", file=sys.stderr)
+        return
+    print(f"sky: {len(found)} upcoming games found")
+    data["games"].update(found)
+    write_json_if_changed(path, data)
+
+    weeks = {}
+    for info in found.values():
+        weeks.setdefault((info["season_type"], info["week"]), []).append(info)
+    done = set(state.get("sky_notified", []))
+    topic = os.environ.get("NTFY_TOPIC")
+    for (st, wk), games in sorted(weeks.items()):
+        key = f"{year}-{st}-{wk}"
+        if key in done or not topic:
+            continue
+        games.sort(key=lambda i: i["uk_ko"])
+        fmt = lambda i: f'{i["match"]} {i["uk_ko"]}'
+        black = [fmt(i) for i in games if i["status"] == "blackout"]
+        maybe = [f'{fmt(i)} ({", ".join(i["channels"])})' for i in games if i["status"] == "maybe"]
+        rest = [fmt(i) for i in games if i["status"] == "dazn"]
+        lines = []
+        if black:
+            lines.append("Not live on DAZN (likely): " + "; ".join(black))
+        if maybe:
+            lines.append("DAZN unclear: " + "; ".join(maybe))
+        if rest:
+            lines.append("On Sky, also live on DAZN: " + "; ".join(rest))
+        site = (os.environ.get("SITE_URL") or "") + (f"#{year}/{'p' if st == 3 else 'w'}{wk}" if os.environ.get("SITE_URL") else "")
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"https://ntfy.sh/{topic}", data="\n".join(lines).encode("utf-8"),
+                headers={"Title": f"{'Playoffs' if st == 3 else 'Week ' + str(wk)} on Sky", "Tags": "tv", "Click": site},
+                method="POST"), timeout=20).read()
+            done.add(key)
+            print(f"sky notified {key}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"sky notify failed: {exc}", file=sys.stderr)
+    state["sky_notified"] = sorted(done)
+
+
 def preseason_reminder(year, state):
     """One push about two weeks before the regular season starts."""
     starts = []
@@ -712,6 +760,9 @@ def main():
 
     write_json_if_changed(os.path.join(DATA_DIR, "seasons.json"),
                           {"seasons": sorted(seasons, reverse=True), "current": year})
+
+    if stype in (2, 3) and rows:
+        update_sky(year, rows, state)
 
     valid = set()
     for y in seasons:
