@@ -15,7 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stakes import season_stakes  # noqa: E402
@@ -529,6 +529,22 @@ def update_sky(year, rows, state):
         print(f"sky fetch failed: {exc}", file=sys.stderr)
         return
     print(f"sky: {len(found)} upcoming games found")
+    overrides = load_json(os.path.join(ROOT, "data", "sky_overrides.json"), {})
+    by_id = {g["id"]: g for g in rows}
+    for gid, fix in overrides.items():
+        if gid.startswith("_") or gid not in by_id:
+            continue
+        g = by_id[gid]
+        if gid not in found:
+            if datetime.fromisoformat(g["date"].replace("Z", "+00:00")) < datetime.now(timezone.utc) - timedelta(hours=6):
+                continue
+            uk = datetime.fromisoformat(g["date"].replace("Z", "+00:00")).astimezone(sky.UK)
+            found[gid] = {"channels": [], "sky": False, "ch5": None, "status": "dazn", "source": "manual",
+                          "uk_ko": uk.strftime("%a %H:%M"), "week": g["week"], "season_type": g["season_type"],
+                          "match": f'{g["away"]["abbr"]} @ {g["home"]["abbr"]}'}
+        found[gid].update(fix)
+        if fix.get("ch5") and fix["ch5"] not in found[gid]["channels"]:
+            found[gid]["channels"] = found[gid]["channels"] + [fix["ch5"]]
     data["games"].update(found)
     write_json_if_changed(path, data)
 
