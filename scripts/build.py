@@ -468,6 +468,85 @@ def notify(topic, games, site_url):
 
 # ---------------------------------------------------------------- main
 
+FEEDBACK_TOPIC = "replay-rater-fb-c4ef88c2fe3e"  # public: the page posts "your verdict" votes here
+VERDICTS = ("highlights", "condensed", "full", "now", "skip")
+
+
+def write_json_if_changed(path, payload, ignore=("generated",)):
+    """Avoid a commit every hour: only rewrite when the content changed."""
+    old = load_json(path, None)
+    strip = lambda d: {k: v for k, v in d.items() if k not in ignore} if isinstance(d, dict) else d
+    if old is not None and strip(old) == strip(payload):
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(payload, f, separators=(",", ":"))
+    return True
+
+
+def collect_feedback(valid_ids):
+    """Pull votes posted from the page via ntfy (ntfy keeps them ~12 hours)."""
+    path = os.path.join(DATA_DIR, "feedback.json")
+    fb = load_json(path, {"votes": {}, "seen": {}})
+    try:
+        req = urllib.request.Request(f"https://ntfy.sh/{FEEDBACK_TOPIC}/json?poll=1&since=all",
+                                     headers={"User-Agent": "nfl-game-rater/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            lines = resp.read().decode("utf-8").splitlines()
+    except Exception as exc:  # noqa: BLE001
+        print(f"feedback poll failed: {exc}", file=sys.stderr)
+        return
+    now = time.time()
+    for line in lines:
+        try:
+            m = json.loads(line)
+            if m.get("event") != "message" or m["id"] in fb["seen"]:
+                continue
+            fb["seen"][m["id"]] = m.get("time", now)
+            v = json.loads(m.get("message") or "{}")
+            gid, verdict = str(v.get("g")), v.get("v")
+            if gid in valid_ids and (verdict in VERDICTS or verdict is None):
+                if verdict is None:
+                    fb["votes"].pop(gid, None)
+                else:
+                    fb["votes"][gid] = {"v": verdict, "t": m.get("time", int(now))}
+        except (ValueError, KeyError, TypeError):
+            continue
+    fb["seen"] = {k: t for k, t in fb["seen"].items() if now - t < 3 * 86400}
+    write_json_if_changed(path, fb, ignore=("seen",))
+
+
+def preseason_reminder(year, state):
+    """One push about two weeks before the regular season starts."""
+    starts = []
+    for y in (year, year + 1):
+        try:
+            starts += [g["date"] for g in fetch_week(y, 2, 1) if g.get("date")]
+        except Exception:  # noqa: BLE001
+            pass
+    now = datetime.now(timezone.utc)
+    future = sorted(d for d in starts if datetime.fromisoformat(d.replace("Z", "+00:00")) > now)
+    if not future:
+        return
+    first = datetime.fromisoformat(future[0].replace("Z", "+00:00"))
+    days = (first - now).days
+    key = first.strftime("%Y")
+    if days <= 14 and state.get("reminded") != key:
+        topic = os.environ.get("NTFY_TOPIC")
+        if topic:
+            body = (f"The {key} season starts {first.strftime('%a %d %b')}. Replay Rater is running. "
+                    "If no ratings appear after the first game, check the Actions tab on GitHub.")
+            try:
+                urllib.request.urlopen(urllib.request.Request(
+                    f"https://ntfy.sh/{topic}", data=body.encode(),
+                    headers={"Title": "NFL season in two weeks", "Tags": "football",
+                             "Click": os.environ.get("SITE_URL") or ""}, method="POST"), timeout=20).read()
+                state["reminded"] = key
+                print("sent preseason reminder")
+            except Exception as exc:  # noqa: BLE001
+                print(f"reminder failed: {exc}", file=sys.stderr)
+
+
 def load_json(path, default):
     try:
         with open(path) as f:
@@ -576,9 +655,7 @@ def build_season(year, fetch, cur=None):
         "tiers": [{"min": f, "key": k, "label": l} for f, k, l in TIERS],
         "games": rows,
     }
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(os.path.join(DATA_DIR, f"{year}.json"), "w") as f:
-        json.dump(payload, f, separators=(",", ":"))
+    write_json_if_changed(os.path.join(DATA_DIR, f"{year}.json"), payload)
 
     cache.update({"games": games, "rated": {k: {"events": v["events"]} for k, v in rated.items()},
                   "extras": extras, "extras_version": EXTRAS_VERSION, "stakes": st_cache, "stakes_version": STAKES_VERSION,
@@ -587,9 +664,7 @@ def build_season(year, fetch, cur=None):
 
 
 def save_cache(year, cache):
-    os.makedirs(os.path.dirname(cache_path(year)), exist_ok=True)
-    with open(cache_path(year), "w") as f:
-        json.dump(cache, f, separators=(",", ":"))
+    write_json_if_changed(cache_path(year), cache, ignore=())
 
 
 def main():
@@ -607,8 +682,11 @@ def main():
         if rows:
             seasons.append(y)
 
-    if stype == 1:  # preseason: rebuild this season from cache only
-        cache, rows, games = build_season(year, fetch=False, cur={"type": 1})
+    state_path = os.path.join(ROOT, "data", "state.json")
+    state = load_json(state_path, {})
+    if stype in (1, 4):  # preseason / offseason: nothing to fetch for this season yet
+        preseason_reminder(year, state)
+        cache, rows, games = build_season(year, fetch=False, cur={"type": stype})
     else:
         cache, rows, games = build_season(year, fetch=True, cur={"type": stype})
     if rows:
@@ -629,8 +707,18 @@ def main():
     cache["notified"] = sorted(notified)
     save_cache(year, cache)
 
-    with open(os.path.join(DATA_DIR, "seasons.json"), "w") as f:
-        json.dump({"seasons": sorted(seasons, reverse=True), "current": year}, f)
+    write_json_if_changed(os.path.join(DATA_DIR, "seasons.json"),
+                          {"seasons": sorted(seasons, reverse=True), "current": year})
+
+    valid = set()
+    for y in seasons:
+        valid |= {g["id"] for g in load_json(os.path.join(DATA_DIR, f"{y}.json"), {}).get("games", [])}
+    collect_feedback(valid)
+
+    # Heartbeat: one small commit a month so GitHub never pauses the schedule
+    # in the off-season (it does after 60 days without commits).
+    state["heartbeat"] = datetime.now(timezone.utc).strftime("%Y-%m")
+    write_json_if_changed(state_path, state, ignore=())
     old = os.path.join(ROOT, "data", "cache.json")
     if os.path.exists(old):
         os.remove(old)

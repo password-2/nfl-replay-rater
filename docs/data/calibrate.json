@@ -1,0 +1,424 @@
+{
+"games": [
+{
+"id": "401326633",
+"season": 2021,
+"week": "Divisional",
+"date": "2022-01-23T23:30Z",
+"away": {
+"abbr": "BUF",
+"name": "Bills"
+},
+"home": {
+"abbr": "KC",
+"name": "Chiefs"
+}
+},
+{
+"id": "401547441",
+"season": 2023,
+"week": "Week 3",
+"date": "2023-09-26T00:15Z",
+"away": {
+"abbr": "LAR",
+"name": "Rams"
+},
+"home": {
+"abbr": "CIN",
+"name": "Bengals"
+}
+},
+{
+"id": "401437843",
+"season": 2022,
+"week": "Week 10",
+"date": "2022-11-15T01:15Z",
+"away": {
+"abbr": "WSH",
+"name": "Commanders"
+},
+"home": {
+"abbr": "PHI",
+"name": "Eagles"
+}
+},
+{
+"id": "401772979",
+"season": 2025,
+"week": "Wild Card",
+"date": "2026-01-10T21:30Z",
+"away": {
+"abbr": "LAR",
+"name": "Rams"
+},
+"home": {
+"abbr": "CAR",
+"name": "Panthers"
+}
+},
+{
+"id": "401437928",
+"season": 2022,
+"week": "Week 16",
+"date": "2022-12-25T01:15Z",
+"away": {
+"abbr": "LV",
+"name": "Raiders"
+},
+"home": {
+"abbr": "PIT",
+"name": "Steelers"
+}
+},
+{
+"id": "401326409",
+"season": 2021,
+"week": "Week 5",
+"date": "2021-10-12T00:15Z",
+"away": {
+"abbr": "IND",
+"name": "Colts"
+},
+"home": {
+"abbr": "BAL",
+"name": "Ravens"
+}
+},
+{
+"id": "401547755",
+"season": 2023,
+"week": "Divisional",
+"date": "2024-01-20T21:30Z",
+"away": {
+"abbr": "HOU",
+"name": "Texans"
+},
+"home": {
+"abbr": "BAL",
+"name": "Ravens"
+}
+},
+{
+"id": "401772980",
+"season": 2025,
+"week": "Wild Card",
+"date": "2026-01-11T21:30Z",
+"away": {
+"abbr": "SF",
+"name": "49ers"
+},
+"home": {
+"abbr": "PHI",
+"name": "Eagles"
+}
+},
+{
+"id": "401326629",
+"season": 2021,
+"week": "Wild Card",
+"date": "2022-01-16T21:30Z",
+"away": {
+"abbr": "SF",
+"name": "49ers"
+},
+"home": {
+"abbr": "DAL",
+"name": "Cowboys"
+}
+},
+{
+"id": "401772928",
+"season": 2025,
+"week": "Week 11",
+"date": "2025-11-17T01:20Z",
+"away": {
+"abbr": "DET",
+"name": "Lions"
+},
+"home": {
+"abbr": "PHI",
+"name": "Eagles"
+}
+},
+{
+"id": "401438030",
+"season": 2022,
+"week": "Super Bowl",
+"date": "2023-02-12T23:30Z",
+"away": {
+"abbr": "KC",
+"name": "Chiefs"
+},
+"home": {
+"abbr": "PHI",
+"name": "Eagles"
+}
+},
+{
+"id": "401547754",
+"season": 2023,
+"week": "Wild Card",
+"date": "2024-01-16T01:15Z",
+"away": {
+"abbr": "PHI",
+"name": "Eagles"
+},
+"home": {
+"abbr": "TB",
+"name": "Buccaneers"
+}
+},
+{
+"id": "401671814",
+"season": 2024,
+"week": "Week 14",
+"date": "2024-12-06T01:15Z",
+"away": {
+"abbr": "GB",
+"name": "Packers"
+},
+"home": {
+"abbr": "DET",
+"name": "Lions"
+}
+},
+{
+"id": "401671889",
+"season": 2024,
+"week": "Super Bowl",
+"date": "2025-02-09T23:30Z",
+"away": {
+"abbr": "KC",
+"name": "Chiefs"
+},
+"home": {
+"abbr": "PHI",
+"name": "Eagles"
+}
+},
+{
+"id": "401547379",
+"season": 2023,
+"week": "Conference",
+"date": "2024-01-28T20:00Z",
+"away": {
+"abbr": "KC",
+"name": "Chiefs"
+},
+"home": {
+"abbr": "BAL",
+"name": "Ravens"
+}
+},
+{
+"id": "401326631",
+"season": 2021,
+"week": "Divisional",
+"date": "2022-01-23T01:15Z",
+"away": {
+"abbr": "SF",
+"name": "49ers"
+},
+"home": {
+"abbr": "GB",
+"name": "Packers"
+}
+},
+{
+"id": "401437998",
+"season": 2022,
+"week": "Wild Card",
+"date": "2023-01-15T01:15Z",
+"away": {
+"abbr": "LAC",
+"name": "Chargers"
+},
+"home": {
+"abbr": "JAX",
+"name": "Jaguars"
+}
+},
+{
+"id": "401326627",
+"season": 2021,
+"week": "Wild Card",
+"date": "2022-01-15T21:30Z",
+"away": {
+"abbr": "LV",
+"name": "Raiders"
+},
+"home": {
+"abbr": "CIN",
+"name": "Bengals"
+}
+},
+{
+"id": "401547621",
+"season": 2023,
+"week": "Week 16",
+"date": "2023-12-25T01:15Z",
+"away": {
+"abbr": "NE",
+"name": "Patriots"
+},
+"home": {
+"abbr": "DEN",
+"name": "Broncos"
+}
+},
+{
+"id": "401326634",
+"season": 2021,
+"week": "Divisional",
+"date": "2022-01-23T20:00Z",
+"away": {
+"abbr": "LAR",
+"name": "Rams"
+},
+"home": {
+"abbr": "TB",
+"name": "Buccaneers"
+}
+},
+{
+"id": "401547757",
+"season": 2023,
+"week": "Divisional",
+"date": "2024-01-21T20:00Z",
+"away": {
+"abbr": "TB",
+"name": "Buccaneers"
+},
+"home": {
+"abbr": "DET",
+"name": "Lions"
+}
+},
+{
+"id": "401438008",
+"season": 2022,
+"week": "Conference",
+"date": "2023-01-29T23:30Z",
+"away": {
+"abbr": "CIN",
+"name": "Bengals"
+},
+"home": {
+"abbr": "KC",
+"name": "Chiefs"
+}
+},
+{
+"id": "401547756",
+"season": 2023,
+"week": "Divisional",
+"date": "2024-01-21T01:15Z",
+"away": {
+"abbr": "GB",
+"name": "Packers"
+},
+"home": {
+"abbr": "SF",
+"name": "49ers"
+}
+},
+{
+"id": "401326361",
+"season": 2021,
+"week": "Week 2",
+"date": "2021-09-20T00:20Z",
+"away": {
+"abbr": "KC",
+"name": "Chiefs"
+},
+"home": {
+"abbr": "BAL",
+"name": "Ravens"
+}
+},
+{
+"id": "401326636",
+"season": 2021,
+"week": "Conference",
+"date": "2022-01-30T23:30Z",
+"away": {
+"abbr": "SF",
+"name": "49ers"
+},
+"home": {
+"abbr": "LAR",
+"name": "Rams"
+}
+},
+{
+"id": "401772982",
+"season": 2025,
+"week": "Divisional",
+"date": "2026-01-17T21:30Z",
+"away": {
+"abbr": "BUF",
+"name": "Bills"
+},
+"home": {
+"abbr": "DEN",
+"name": "Broncos"
+}
+},
+{
+"id": "401326635",
+"season": 2021,
+"week": "Conference",
+"date": "2022-01-30T20:00Z",
+"away": {
+"abbr": "CIN",
+"name": "Bengals"
+},
+"home": {
+"abbr": "KC",
+"name": "Chiefs"
+}
+},
+{
+"id": "401772976",
+"season": 2025,
+"week": "Wild Card",
+"date": "2026-01-13T01:15Z",
+"away": {
+"abbr": "HOU",
+"name": "Texans"
+},
+"home": {
+"abbr": "PIT",
+"name": "Steelers"
+}
+},
+{
+"id": "401671879",
+"season": 2024,
+"week": "Wild Card",
+"date": "2025-01-12T01:00Z",
+"away": {
+"abbr": "PIT",
+"name": "Steelers"
+},
+"home": {
+"abbr": "BAL",
+"name": "Ravens"
+}
+},
+{
+"id": "401326632",
+"season": 2021,
+"week": "Divisional",
+"date": "2022-01-22T21:30Z",
+"away": {
+"abbr": "CIN",
+"name": "Bengals"
+},
+"home": {
+"abbr": "TEN",
+"name": "Titans"
+}
+}
+]
+}

@@ -50,6 +50,20 @@ verdict without stakes wherever stakes changed it.
 Tune `WEIGHTS` and `STAKES_CURVE` in `scripts/build.py`, and `LEVERAGE_FULL`
 in `scripts/stakes.py`.
 
+## Your verdicts (calibration)
+
+Open any finished game and tap **Your verdict**, or work through the **Tune** tab
+(30 past games picked by `scripts/pick_calibration.py`, matchups only, no
+scores). Votes are saved on the phone and posted to a public ntfy topic
+(`FEEDBACK_TOPIC` in `scripts/build.py`); the hourly job collects them into
+`docs/data/feedback.json`, which is what the weights get refitted against.
+
+## Off-season
+
+The job commits a small heartbeat to `data/state.json` once a month, so GitHub
+never pauses the schedule. About two weeks before the regular season starts it
+sends one ntfy push saying the season is about to begin.
+
 ## Setup
 
 1. Create a **public** repository and push these files (Pages is free on public repos).
@@ -61,8 +75,6 @@ in `scripts/stakes.py`.
 5. Actions tab > Update ratings > Run workflow (the first run backfills the
    season without sending a notification).
 
-Note: GitHub pauses scheduled workflows after 60 days with no commits. In the
-off-season that will happen; re-enable it from the Actions tab in September.
 
 ## Local run
 
