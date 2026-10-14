@@ -140,7 +140,7 @@ tr.game td:first-child { border-left: 4px solid var(--stripe, transparent); padd
 }
 .votes button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .tune-note { font-size: .88rem; max-width: 65ch; margin: 0; }
-.sky { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 4px; font: 600 .7rem/1.3 var(--body); letter-spacing: .02em; }
+.sky { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 4px; font: 600 .7rem/1.3 var(--body); letter-spacing: .02em; white-space: normal; }
 .sky-blackout { background: var(--tint-now); color: var(--t-now); }
 .sky-maybe { background: var(--tint-condensed); color: var(--t-condensed); }
 .sky-dazn { background: transparent; color: var(--muted); padding-left: 0; }
@@ -486,15 +486,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 
   var skyData = {};
   function skyTag(id) {
-    var k = skyData[id];
-    if (!k) return null;
-    var sky = (k.channels || []).filter(function (c) { return c.indexOf("Sky") === 0 && c !== "Sky Sports Main Event"; })[0];
-    var five = k.ch5 ? (k.ch5 === "5Action" ? "free on 5Action" : "free on Channel 5") : null;
-    var text, cls;
-    if (k.status === "blackout") { text = (sky || "Sky") + " · not live on DAZN" + (k.source === "tracker" ? "" : " (likely)"); cls = "blackout"; }
-    else if (k.status === "maybe") { text = (sky || "Sky") + " · DAZN unclear"; cls = "maybe"; }
-    else { text = [sky, five].filter(Boolean).join(" · ") + " · also on DAZN"; cls = "dazn"; }
-    return el("span", { "class": "sky sky-" + cls, text: text.replace(/^ · /, "") });
+    return skyData[id] ? el("span", { "class": "sky sky-blackout", text: "Not live on DAZN" }) : null;
   }
 
   function gameRow(g) {

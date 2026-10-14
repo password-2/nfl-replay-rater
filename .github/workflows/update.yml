@@ -4,7 +4,12 @@ on:
   schedule:
     # Every hour at :17 (GitHub may run a few minutes late at busy times).
     - cron: "17 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      resend:
+        description: "Send a test push and resend this week's DAZN blackouts"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,6 +32,7 @@ jobs:
       - name: Fetch games and rate them
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RESEND: ${{ inputs.resend }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python scripts/build.py
 

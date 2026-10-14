@@ -519,76 +519,68 @@ def collect_feedback(valid_ids):
     write_json_if_changed(path, fb, ignore=("seen",))
 
 
+def push(title, body, click="", tags="tv"):
+    topic = os.environ.get("NTFY_TOPIC")
+    if not topic:
+        return False
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),
+            headers={"Title": title, "Tags": tags, "Click": click}, method="POST"), timeout=20).read()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"push failed: {exc}", file=sys.stderr)
+        return False
+
+
 def update_sky(year, rows, state):
-    """Record which upcoming games Sky shows, and push once per week when Sky publishes."""
+    """Record the two DAZN blackouts per week (from Sky's listings) and push once per week."""
     path = os.path.join(DATA_DIR, "sky.json")
     data = load_json(path, {"games": {}})
     try:
-        found = sky.sky_games(rows)
+        found, problems, listed = sky.blackouts(rows)
     except Exception as exc:  # noqa: BLE001
         print(f"sky fetch failed: {exc}", file=sys.stderr)
         return
-    print(f"sky: {len(found)} upcoming games found")
-    overrides = load_json(os.path.join(ROOT, "data", "sky_overrides.json"), {})
-    by_id = {g["id"]: g for g in rows}
-    for gid, fix in overrides.items():
-        if gid.startswith("_") or gid not in by_id:
-            continue
-        g = by_id[gid]
-        if gid not in found:
-            if datetime.fromisoformat(g["date"].replace("Z", "+00:00")) < datetime.now(timezone.utc) - timedelta(hours=6):
-                continue
-            uk = datetime.fromisoformat(g["date"].replace("Z", "+00:00")).astimezone(sky.UK)
-            found[gid] = {"channels": [], "sky": False, "ch5": None, "status": "dazn", "source": "manual",
-                          "uk_ko": uk.strftime("%a %H:%M"), "week": g["week"], "season_type": g["season_type"],
-                          "match": f'{g["away"]["abbr"]} @ {g["home"]["abbr"]}'}
-        found[gid].update(fix)
-        if fix.get("ch5") and fix["ch5"] not in found[gid]["channels"]:
-            found[gid]["channels"] = found[gid]["channels"] + [fix["ch5"]]
+    print(f"sky: {listed} listings, {len(found)} blackouts, problems {problems}")
+    # Keep past weeks; replace this run's weeks wholesale so changes stick.
+    weeks_now = {(i["season_type"], i["week"]) for i in found.values()}
+    data["games"] = {k: v for k, v in data.get("games", {}).items()
+                     if (v.get("season_type"), v.get("week")) not in weeks_now and v.get("window")}
     data["games"].update(found)
     write_json_if_changed(path, data)
 
-    weeks = {}
-    for info in found.values():
-        weeks.setdefault((info["season_type"], info["week"]), []).append(info)
-    sent = state.get("sky_sent") or {k: "" for k in state.get("sky_notified", [])}
-    topic = os.environ.get("NTFY_TOPIC")
-    for (st, wk), games in sorted(weeks.items()):
+    site = os.environ.get("SITE_URL") or ""
+    sent = state.get("sky_sent", {})
+    if os.environ.get("RESEND") == "true":
+        sent = {k: v for k, v in sent.items() if not any(k == f"{year}-{st}-{wk}" for st, wk in weeks_now)}
+        push("Replay Rater test", "Notifications are reaching this phone.", site)
+    for st, wk in sorted(weeks_now):
         key = f"{year}-{st}-{wk}"
-        games.sort(key=lambda i: (i["uk_ko"][:3] != "Thu", i["uk_ko"]))
-        black = [i for i in games if i["status"] == "blackout"]
-        sig = ",".join(sorted(i["match"] for i in black))
-        if not topic or sent.get(key) == sig or (key in sent and not black):
+        games = sorted((i for i in found.values() if (i["season_type"], i["week"]) == (st, wk)), key=lambda i: i["uk_ko"])
+        sig = ",".join(i["match"] for i in games)
+        if sent.get(key) == sig:
             continue
-        fmt = lambda i: f'{i["match"]} {i["uk_ko"]}'
-        sure = all(i["source"] == "tracker" for i in black)
-        lines = []
-        if black:
-            lines.append(("Not live on DAZN: " if sure else "Not live on DAZN (likely): ") + "; ".join(map(fmt, black)))
-        maybe = [i for i in games if i["status"] == "maybe"]
-        if maybe:
-            lines.append("DAZN unclear: " + "; ".join(f'{fmt(i)} ({", ".join(i["channels"])})' for i in maybe))
-        five = [i for i in games if i["ch5"]]
-        if five:
-            lines.append("Free on 5: " + "; ".join(f'{fmt(i)}' + (" (5Action)" if i["ch5"] == "5Action" else "") for i in five))
-        rest = [i for i in games if i["status"] == "dazn" and i["sky"] and not i["ch5"]]
-        if rest:
-            lines.append("On Sky, also live on DAZN: " + "; ".join(map(fmt, rest)))
-        label = "Playoffs" if st == 3 else f"Week {wk}"
-        title = f"{label} update: DAZN blackouts changed" if key in sent else f"{label} on Sky"
-        site = os.environ.get("SITE_URL") or ""
-        if site:
-            site += f"#{year}/{'p' if st == 3 else 'w'}{wk}"
-        try:
-            urllib.request.urlopen(urllib.request.Request(
-                f"https://ntfy.sh/{topic}", data="\n".join(lines).encode("utf-8"),
-                headers={"Title": title, "Tags": "tv", "Click": site}, method="POST"), timeout=20).read()
+        body = "\n".join(f'{i["match"]}  {i["uk_ko"]}' for i in games)
+        if any(p.startswith(f"Week {wk}:") for p in problems):
+            body += "\nCheck Sky: more than one Sky Sports NFL game in a window."
+        title = f"Week {wk}: not live on DAZN" + (" (changed)" if key in sent else "")
+        if push(title, body, site + (f"#{year}/w{wk}" if site else "")):
             sent[key] = sig
-            print(f"sky notified {key}: {sig}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"sky notify failed: {exc}", file=sys.stderr)
     state["sky_sent"] = sent
-    state.pop("sky_notified", None)
+    for k in ("sky_notified",):
+        state.pop(k, None)
+
+    # Validate the rule against DAZN's help page; flag if its wording changes.
+    fp, ok = sky.dazn_rule_fingerprint()
+    if fp:
+        if state.get("dazn_rule") and state["dazn_rule"] != fp:
+            push("DAZN blackout rules page changed",
+                 "DAZN edited its UK blackout help page. Worth a look in case the 6pm / 9pm rule changed.", sky.DAZN_URL)
+        if ok is False and state.get("dazn_rule_ok") is not False:
+            push("DAZN blackout rule check failed",
+                 "DAZN's help page no longer mentions the 6pm / 9pm windows. Blackout picks may be wrong.", sky.DAZN_URL)
+        state["dazn_rule"], state["dazn_rule_ok"] = fp, ok
 
 
 def preseason_reminder(year, state):

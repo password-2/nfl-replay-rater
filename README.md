@@ -58,15 +58,14 @@ scores). Votes are saved on the phone and posted to a public ntfy topic
 (`FEEDBACK_TOPIC` in `scripts/build.py`); the hourly job collects them into
 `docs/data/feedback.json`, which is what the weights get refitted against.
 
-## Sky, Channel 5 and DAZN
+## DAZN blackouts
 
-Each hour the job reads Sky Sports' weekly "NFL live on Sky Sports" article and
-the newest r/NFLUK "where to watch tracker" post. UK rights rule: one
-Sky-exclusive game per Sunday 6pm and 9pm window is not live on DAZN, and
-Channel 5's games are never blacked out. Where the tracker gives a DAZN status
-it wins; otherwise the blackout is the Sky game in that window that Channel 5
-isn't showing (preferring Sky Sports NFL). One push per week when Sky's list
-appears, and a correction push if the blackout pick changes. Logic in
+Each hour the job reads Sky's listings (skysports.com/watch/nfl-on-sky). The
+Sunday games Sky shows on Sky Sports NFL in the 6pm and 9pm windows are the two
+not live on DAZN; the page tags them "Not live on DAZN" and one push per week
+lists them (another if they change). The job also watches DAZN's UK blackout
+help page and pushes if its wording about the windows changes. To test pushes:
+Actions > Update ratings > Run workflow, tick "Send a test push". Logic in
 `scripts/sky.py`.
 
 ## Off-season
