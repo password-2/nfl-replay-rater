@@ -55,8 +55,8 @@ FACTOR_INFO = {
     "comeback": ("Comeback", "Full when the winner came back from 14 points down."),
     "big_plays": ("Big plays", "Full at two touchdowns of 40+ yards."),
     "defence_st": ("Defence / special teams scores", "Full at 1.5 defensive or return touchdowns or safeties."),
-    "chaos": ("Chaos", "Fights and ejections count most, then taunting and unsportsmanlike conduct, then personal "
-              "fouls. Full at about two ejections. Only what appears in the play-by-play is caught."),
+    "chaos": ("Chaos", "Fights and ejections (3 points each), taunting and unsportsmanlike conduct (1.5), offsetting "
+              "penalties (1). Full at 4.5, e.g. three taunting flags. Only what appears in the play-by-play is caught."),
 }
 CAP = 1.25
 
@@ -74,7 +74,7 @@ TIER_LABEL = {t[1]: t[2] for t in TIERS}
 # subtract: a good game is worth watching whatever was on the line.
 STAKES_CURVE = [(0, 0), (40, 0), (90, 10), (100, 10)]
 STAKES_VERSION = 3
-EXTRAS_VERSION = 3
+EXTRAS_VERSION = 4
 
 
 def stakes_adjust(stakes):
@@ -290,8 +290,9 @@ CHAOS_PATTERNS = [  # (key, regex, points)
     ("fights", r"\bfight(?:ing)?\b", 3.0),
     ("taunting", r"\btaunting\b", 1.5),
     ("unsportsmanlike", r"unsportsmanlike", 1.5),
-    ("personal_fouls", r"unnecessary roughness|personal foul|roughing the passer|face ?mask", 0.5),
+    ("offsetting", r"offsetting", 1.0),
 ]
+CHAOS_FULL = 4.5  # points for full marks: e.g. three taunting/unsportsmanlike flags
 
 
 def parse_chaos(summary):
@@ -420,7 +421,7 @@ def rate(game, events, extra=None, exp_margin=None):
         "comeback": round(clamp(comeback / 14), 3),
         "big_plays": round(clamp(sum(1 for e in events if e["kind"] == "td" and e["yards"] >= 40) / 2), 3),
         "defence_st": round(clamp(sum(1 for e in events if e["defst"]) / 1.5), 3),
-        "chaos": round(clamp(chaos_points(extra.get("chaos")) / 6), 3),
+        "chaos": round(clamp(chaos_points(extra.get("chaos")) / CHAOS_FULL), 3),
     }
     quality = round(BASE_POINTS + sum(WEIGHTS[k] * v for k, v in factors.items()), 1)
     return {

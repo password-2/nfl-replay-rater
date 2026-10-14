@@ -506,7 +506,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   function chaosLabel(g) {
     var c = g.chaos || {}, bits = [];
     var names = { ejections: ["ejection", "ejections"], fights: ["fight", "fights"], taunting: ["taunt", "taunts"],
-      unsportsmanlike: ["unsportsmanlike", "unsportsmanlike"], personal_fouls: ["personal foul", "personal fouls"] };
+      unsportsmanlike: ["unsportsmanlike", "unsportsmanlike"], offsetting: ["offsetting foul", "offsetting fouls"] };
     Object.keys(names).forEach(function (k) { if (c[k]) bits.push(c[k] + " " + names[k][c[k] === 1 ? 0 : 1]); });
     return "Chaos" + (bits.length ? " (" + bits.join(", ") + ")" : "");
   }
