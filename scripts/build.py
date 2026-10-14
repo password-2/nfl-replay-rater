@@ -475,6 +475,7 @@ VERDICTS = ("highlights", "condensed", "full", "now", "skip")
 def write_json_if_changed(path, payload, ignore=("generated",)):
     """Avoid a commit every hour: only rewrite when the content changed."""
     old = load_json(path, None)
+    payload = json.loads(json.dumps(payload))  # tuples -> lists, so it compares like the file
     strip = lambda d: {k: v for k, v in d.items() if k not in ignore} if isinstance(d, dict) else d
     if old is not None and strip(old) == strip(payload):
         return False
