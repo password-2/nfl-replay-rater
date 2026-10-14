@@ -545,7 +545,11 @@ def update_sky(year, rows, state):
     print(f"sky: {listed} listings, {len(found)} blackouts, problems {problems}")
     if os.environ.get("SKY_DEBUG") == "true":   # one-off: what does the Sky page look like to the job?
         try:
-            lines = sky.text_lines(sky._get(sky.SKY_URL))
+            raw = sky._get(sky.SKY_URL)
+            i = raw.find("Week 6")
+            with open(os.path.join(ROOT, "data", "sky_debug_raw.txt"), "w") as f:
+                f.write(re.sub(r"\s+", " ", raw[max(0, i - 2500):i + 300]))
+            lines = sky.text_lines(raw)
             keep = [l for l in lines if "@" in l or "Week" in l or "Sky Sports" in l or re.search(r"\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", l)]
             with open(os.path.join(ROOT, "data", "sky_debug.txt"), "w") as f:
                 f.write(f"{len(lines)} lines\n" + "\n".join(keep[:150]))
