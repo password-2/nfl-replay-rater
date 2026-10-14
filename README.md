@@ -10,6 +10,14 @@ watch the full replay, the condensed game or just the highlights.
 - When a round of games finishes (something new is final and nothing is still
   live), it sends one phone notification through ntfy, linking to the page.
 
+## Credit
+
+The idea comes from [NFL Game Rater](https://www.nflgamerater.com/): a spoiler-free
+guide to which games are worth watching. This is an independent rebuild for
+personal use with its own factors, weights, stakes model and workflow, tuned to
+my taste. It shares no code with the original. All credit for the concept goes
+to its author.
+
 ## Verdicts
 
 | Rating | Verdict |
