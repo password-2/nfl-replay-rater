@@ -488,11 +488,13 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   function skyTag(id) {
     var k = skyData[id];
     if (!k) return null;
-    var ch = (k.channels || []).filter(function (c) { return c !== "Sky Sports Main Event"; })[0] || "Sky";
-    var text = k.status === "blackout" ? ch + " · not live on DAZN"
-      : k.status === "maybe" ? ch + " · DAZN unclear"
-      : ch + " · also on DAZN";
-    return el("span", { "class": "sky sky-" + (k.status === "blackout" ? "blackout" : k.status === "maybe" ? "maybe" : "dazn"), text: text });
+    var sky = (k.channels || []).filter(function (c) { return c.indexOf("Sky") === 0 && c !== "Sky Sports Main Event"; })[0];
+    var five = k.ch5 ? (k.ch5 === "5Action" ? "free on 5Action" : "free on Channel 5") : null;
+    var text, cls;
+    if (k.status === "blackout") { text = (sky || "Sky") + " · not live on DAZN" + (k.source === "tracker" ? "" : " (likely)"); cls = "blackout"; }
+    else if (k.status === "maybe") { text = (sky || "Sky") + " · DAZN unclear"; cls = "maybe"; }
+    else { text = [sky, five].filter(Boolean).join(" · ") + " · also on DAZN"; cls = "dazn"; }
+    return el("span", { "class": "sky sky-" + cls, text: text.replace(/^ · /, "") });
   }
 
   function gameRow(g) {

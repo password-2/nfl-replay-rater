@@ -535,35 +535,44 @@ def update_sky(year, rows, state):
     weeks = {}
     for info in found.values():
         weeks.setdefault((info["season_type"], info["week"]), []).append(info)
-    done = set(state.get("sky_notified", []))
+    sent = state.get("sky_sent") or {k: "" for k in state.get("sky_notified", [])}
     topic = os.environ.get("NTFY_TOPIC")
     for (st, wk), games in sorted(weeks.items()):
         key = f"{year}-{st}-{wk}"
-        if key in done or not topic:
+        games.sort(key=lambda i: (i["uk_ko"][:3] != "Thu", i["uk_ko"]))
+        black = [i for i in games if i["status"] == "blackout"]
+        sig = ",".join(sorted(i["match"] for i in black))
+        if not topic or sent.get(key) == sig or (key in sent and not black):
             continue
-        games.sort(key=lambda i: i["uk_ko"])
         fmt = lambda i: f'{i["match"]} {i["uk_ko"]}'
-        black = [fmt(i) for i in games if i["status"] == "blackout"]
-        maybe = [f'{fmt(i)} ({", ".join(i["channels"])})' for i in games if i["status"] == "maybe"]
-        rest = [fmt(i) for i in games if i["status"] == "dazn"]
+        sure = all(i["source"] == "tracker" for i in black)
         lines = []
         if black:
-            lines.append("Not live on DAZN (likely): " + "; ".join(black))
+            lines.append(("Not live on DAZN: " if sure else "Not live on DAZN (likely): ") + "; ".join(map(fmt, black)))
+        maybe = [i for i in games if i["status"] == "maybe"]
         if maybe:
-            lines.append("DAZN unclear: " + "; ".join(maybe))
+            lines.append("DAZN unclear: " + "; ".join(f'{fmt(i)} ({", ".join(i["channels"])})' for i in maybe))
+        five = [i for i in games if i["ch5"]]
+        if five:
+            lines.append("Free on 5: " + "; ".join(f'{fmt(i)}' + (" (5Action)" if i["ch5"] == "5Action" else "") for i in five))
+        rest = [i for i in games if i["status"] == "dazn" and i["sky"] and not i["ch5"]]
         if rest:
-            lines.append("On Sky, also live on DAZN: " + "; ".join(rest))
-        site = (os.environ.get("SITE_URL") or "") + (f"#{year}/{'p' if st == 3 else 'w'}{wk}" if os.environ.get("SITE_URL") else "")
+            lines.append("On Sky, also live on DAZN: " + "; ".join(map(fmt, rest)))
+        label = "Playoffs" if st == 3 else f"Week {wk}"
+        title = f"{label} update: DAZN blackouts changed" if key in sent else f"{label} on Sky"
+        site = os.environ.get("SITE_URL") or ""
+        if site:
+            site += f"#{year}/{'p' if st == 3 else 'w'}{wk}"
         try:
             urllib.request.urlopen(urllib.request.Request(
                 f"https://ntfy.sh/{topic}", data="\n".join(lines).encode("utf-8"),
-                headers={"Title": f"{'Playoffs' if st == 3 else 'Week ' + str(wk)} on Sky", "Tags": "tv", "Click": site},
-                method="POST"), timeout=20).read()
-            done.add(key)
-            print(f"sky notified {key}")
+                headers={"Title": title, "Tags": "tv", "Click": site}, method="POST"), timeout=20).read()
+            sent[key] = sig
+            print(f"sky notified {key}: {sig}")
         except Exception as exc:  # noqa: BLE001
             print(f"sky notify failed: {exc}", file=sys.stderr)
-    state["sky_notified"] = sorted(done)
+    state["sky_sent"] = sent
+    state.pop("sky_notified", None)
 
 
 def preseason_reminder(year, state):
