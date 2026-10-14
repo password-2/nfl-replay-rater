@@ -10,10 +10,6 @@ on:
         description: "Send a test push and resend this week's DAZN blackouts"
         type: boolean
         default: false
-      sky_debug:
-        description: "Save what the Sky listings page looks like to the job"
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -37,7 +33,6 @@ jobs:
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           RESEND: ${{ inputs.resend }}
-          SKY_DEBUG: ${{ inputs.sky_debug }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python scripts/build.py
 

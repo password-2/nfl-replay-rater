@@ -36,27 +36,27 @@ def text_lines(page):
     return [re.sub(r"\s+", " ", l).strip() for l in page.split("\n") if l.strip()]
 
 
-def parse_listings(lines, nicknames):
-    """[(nick_a, nick_b, on_sky_sports_nfl)] from Sky's listings page.
+EVENT_RE = re.compile(
+    r'<ul[^>]*class="[^"]*\bevent\b[^"]*"[^>]*>(.*?)</ul>\s*<p[^>]*class="[^"]*event-detail[^"]*"[^>]*>(.*?)</p>', re.S)
 
-    Each game is a matchup line ("Away @ Home") followed, on the same or the
-    next few lines, by "NFL - Week N, <channel> (HH:MM), ...".
+
+def parse_listings(page, nicknames):
+    """[(nick_a, nick_b, on_sky_sports_nfl)] from Sky's listings page HTML.
+
+    Each listing is a row with two team names in <strong> tags, then a caption
+    such as "NFL - Week 6, Sky Sports NFL (18:00), Sky Sports Main Event (18:00)".
     """
     out = []
-    for i, line in enumerate(lines):
-        if "@" not in line and not re.search(r"\bvs?\b", line):
+    for teams_html, caption in EVENT_RE.findall(page):
+        names = [html.unescape(re.sub(r"<[^>]+>", "", n)).strip()
+                 for n in re.findall(r"<strong[^>]*>(.*?)</strong>", teams_html, re.S)]
+        caption = html.unescape(re.sub(r"<[^>]+>", " ", caption))
+        if len(names) < 2 or "NFL" not in caption:
             continue
-        found = sorted((m.start(), n) for n in nicknames for m in [re.search(r"\b%s\b" % re.escape(n), line)] if m)
-        if len(found) < 2:
-            continue
-        detail = " ".join(lines[i:i + 4])
-        if "Sky Sports" not in detail:
-            continue
-        nxt = next((j for j in range(i + 1, min(i + 4, len(lines)))
-                    if "@" in lines[j] and sum(bool(re.search(r"\b%s\b" % re.escape(n), lines[j])) for n in nicknames) >= 2), None)
-        if nxt is not None:
-            detail = " ".join(lines[i:nxt])
-        out.append((found[0][1], found[1][1], "Sky Sports NFL" in detail))
+        pick = lambda name: next((n for n in nicknames if re.search(r"\b%s\b" % re.escape(n), name)), None)
+        a, b = pick(names[0]), pick(names[1])
+        if a and b:
+            out.append((a, b, "Sky Sports NFL" in caption))
     return out
 
 
@@ -69,16 +69,16 @@ def window(date_iso):
     return None, uk
 
 
-def blackouts(games, now=None, lines=None):
-    """Returns (blackouts {game_id: info}, problems [str]) for the next ~10 days."""
+def blackouts(games, now=None, page=None):
+    """Returns (blackouts {game_id: info}, problems [str], listings found) for the next ~10 days."""
     now = now or datetime.now(timezone.utc)
-    if lines is None:
-        lines = text_lines(_get(SKY_URL))
+    if page is None:
+        page = _get(SKY_URL)
     nick = {}
     for g in games:
         for side in ("home", "away"):
             nick[g[side]["name"]] = g[side]["abbr"]
-    listed = parse_listings(lines, sorted(nick, key=len, reverse=True))
+    listed = parse_listings(page, sorted(nick, key=len, reverse=True))
 
     upcoming = [g for g in games if g.get("date") and g["season_type"] == 2 and
                 now - timedelta(hours=6) < datetime.fromisoformat(g["date"].replace("Z", "+00:00")) < now + timedelta(days=10)]
