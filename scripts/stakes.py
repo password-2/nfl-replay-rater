@@ -94,12 +94,14 @@ def strengths(results):
     return {t: pd[t] / (n[t] + SHRINK) for t in DIV_OF}
 
 
-def season_stakes(games, seed_value=7):
+def season_stakes(games, seed_value=7, cached=None):
     """games: list of game dicts for one season.
 
     Returns {game_id: {"stakes": 0-100, "exp_margin": float (home view) or None}}.
+    cached: a previous result. A week's stakes only depend on earlier results,
+    so once computed they are final and are reused rather than re-simulated.
     """
-    rng = random.Random(seed_value)
+    cached = cached or {}
     reg = [g for g in games if g["season_type"] == 2]
     out = {}
 
@@ -112,6 +114,10 @@ def season_stakes(games, seed_value=7):
         before = [g for g in reg if g["week"] < week]
         if not this_week:
             continue
+        if all(g["id"] in cached for g in this_week):
+            out.update({g["id"]: cached[g["id"]] for g in this_week})
+            continue
+        rng = random.Random(seed_value * 1000 + week)  # per week, so reuse is reproducible
         if any(not g["completed"] and g.get("state") != "post" for g in before):
             break  # standings before this week aren't final yet
         try:

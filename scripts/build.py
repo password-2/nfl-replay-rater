@@ -73,7 +73,7 @@ TIER_LABEL = {t[1]: t[2] for t in TIERS}
 # score, enough to tip a marginal game over a tier boundary. Low stakes never
 # subtract: a good game is worth watching whatever was on the line.
 STAKES_CURVE = [(0, 0), (40, 0), (90, 10), (100, 10)]
-STAKES_VERSION = 2
+STAKES_VERSION = 3
 EXTRAS_VERSION = 3
 
 
@@ -632,7 +632,8 @@ def build_season(year, fetch, cur=None):
     # Stakes: recomputed for the live season; cached for finished ones.
     st_cache = cache.get("stakes")
     if fetch or cur is not None or not st_cache or cache.get("stakes_version") != STAKES_VERSION:
-        st_cache = season_stakes(list(games.values()))
+        reuse = st_cache if cache.get("stakes_version") == STAKES_VERSION else None
+        st_cache = season_stakes(list(games.values()), cached=reuse)
     stakes = {gid: v["stakes"] for gid, v in st_cache.items()}
     exp_margin = {gid: v.get("exp_margin") for gid, v in st_cache.items()}
 
