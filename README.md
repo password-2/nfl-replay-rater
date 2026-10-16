@@ -90,10 +90,12 @@ is enough to start the watch.
 
 If a push hasn't arrived:
 
-- **Phone (Safari):** github.com/password-2/nfl-replay-rater > Actions >
-  Update ratings > Run workflow (top right of the run list; use desktop site if
-  it's hidden) > Run workflow. Tick "Send a test push" only to test notifications.
-- **GitHub app:** repo > Actions > Update ratings > the "..." menu > Run workflow.
+- In a browser (Safari on the phone works; switch to the desktop site if the
+  button is hidden): github.com/password-2/nfl-replay-rater > Actions >
+  "Update ratings" (left list) > "Run workflow" (grey button above the run
+  list, right side) > green "Run workflow". Tick "Send a test push" only to
+  test notifications.
+- Or ask Claude to run it.
 - The run takes under a minute when no games are on; the push follows straight
   after.
 
