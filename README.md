@@ -76,6 +76,27 @@ help page and pushes if its wording about the windows changes. To test pushes:
 Actions > Update ratings > Run workflow, tick "Send a test push". Logic in
 `scripts/sky.py`.
 
+## Timing (the watcher)
+
+GitHub runs the hourly timer late or skips runs at busy times, often going
+3-6 hours between runs overnight. So `scripts/watch.py` doesn't rely on it: if
+a run finds a game live, or one kicking off within 4 hours, it stays on and
+re-checks ESPN every 5 minutes, publishing each final and pushing once the
+round is over. Before GitHub's 6-hour job limit it starts a fresh copy of itself.
+Any timer run that lands in the 4 hours before kickoff, or during the games,
+is enough to start the watch.
+
+## Running it by hand
+
+If a push hasn't arrived:
+
+- **Phone (Safari):** github.com/password-2/nfl-replay-rater > Actions >
+  Update ratings > Run workflow (top right of the run list; use desktop site if
+  it's hidden) > Run workflow. Tick "Send a test push" only to test notifications.
+- **GitHub app:** repo > Actions > Update ratings > the "..." menu > Run workflow.
+- The run takes under a minute when no games are on; the push follows straight
+  after.
+
 ## Off-season
 
 The job commits a small heartbeat to `data/state.json` once a month, so GitHub

@@ -2,7 +2,9 @@ name: Update ratings
 
 on:
   schedule:
-    # Every hour at :17 (GitHub may run a few minutes late at busy times).
+    # Every hour at :17 (GitHub often runs these late, or skips some).
+    # Any run that lands during, or up to 4h before, a game keeps watching
+    # until the games finish (see scripts/watch.py).
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
@@ -13,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # lets the watcher start a fresh run before the 6h limit
 
 concurrency:
   group: update-ratings
@@ -21,7 +24,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -29,21 +32,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fetch games and rate them
+      - name: Rate games (and watch while games are on)
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           RESEND: ${{ inputs.resend }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-        run: python scripts/build.py
-
-      - name: Commit changes
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "rater-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A docs data
-          if git diff --cached --quiet; then
-            echo "No changes"
-          else
-            git commit -m "Update ratings"
-            git push
-          fi
+          python scripts/watch.py
