@@ -439,9 +439,12 @@ def rate(game, events, extra=None, exp_margin=None):
 
 # ---------------------------------------------------------------- notify
 
+LAST_PUSH_ERROR = [None]
+
+
 def notify(topic, games, site_url):
     if not topic or not games:
-        return
+        return False
     games = sorted(games, key=lambda g: -g["rating"])
     lines = [f"{g['away']['abbr']} @ {g['home']['abbr']}  {g['rating']:.0f}%  {g['tier_label']}" for g in games]
     top = games[0]
@@ -464,8 +467,11 @@ def notify(topic, games, site_url):
     try:
         urllib.request.urlopen(req, timeout=20).read()
         print(f"notified {len(games)} games")
+        return True
     except Exception as exc:  # noqa: BLE001
         print(f"notify failed: {exc}", file=sys.stderr)
+        LAST_PUSH_ERROR[0] = str(exc)
+        return False
 
 
 # ---------------------------------------------------------------- main
@@ -770,8 +776,10 @@ def main():
     if first_run:
         notified |= {g["id"] for g in rated_rows}
     elif fresh and not live:
-        notify(os.environ.get("NTFY_TOPIC"), fresh, os.environ.get("SITE_URL"))
-        notified |= {g["id"] for g in fresh}
+        if notify(os.environ.get("NTFY_TOPIC"), fresh, os.environ.get("SITE_URL")):
+            notified |= {g["id"] for g in fresh}
+        else:
+            state["last_push_error"] = LAST_PUSH_ERROR[0] or "no topic or nothing to send"
     cache["notified"] = sorted(notified)
     save_cache(year, cache)
 
