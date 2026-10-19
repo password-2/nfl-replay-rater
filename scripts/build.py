@@ -773,9 +773,21 @@ def main():
     rated_rows = [g for g in rows if g.get("rating") is not None]
     fresh = [g for g in rated_rows if g["id"] not in notified]
     live = any(g["state"] == "in" for g in games.values())
+    # Hold the push while an afternoon/evening UK kickoff (12:00-22:59) is
+    # still to come in the next 6 hours, so a Sunday's London and 6pm games go
+    # out with the 9pm window. Overnight (prime-time) games still get their own.
+    now_utc = datetime.now(timezone.utc)
+
+    def _held_by(g):
+        if g["state"] != "pre" or not g.get("date"):
+            return False
+        ko = datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
+        return now_utc < ko <= now_utc + timedelta(hours=6) and 12 <= ko.astimezone(sky.UK).hour < 23
+
+    later_today = any(_held_by(g) for g in games.values())
     if first_run:
         notified |= {g["id"] for g in rated_rows}
-    elif fresh and not live:
+    elif fresh and not live and not later_today:
         if notify(os.environ.get("NTFY_TOPIC"), fresh, os.environ.get("SITE_URL")):
             notified |= {g["id"] for g in fresh}
         else:

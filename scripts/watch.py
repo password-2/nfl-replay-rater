@@ -39,6 +39,20 @@ def finals(gs):
     return {g["id"] for g in gs if g.get("completed")}
 
 
+def notified():
+    try:
+        year = json.load(open(os.path.join(DATA, "seasons.json")))["current"]
+        return set(json.load(open(os.path.join(ROOT, "data", f"cache-{year}.json"))).get("notified", []))
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def sync():
+    """Start every pass from the latest commit, so a push already recorded by
+    another run is never sent again."""
+    sh("git", "pull", "-q", "--rebase", "--autostash", "origin", "main", check=False)
+
+
 def should_watch(gs, now):
     for g in gs:
         if g.get("state") == "in":
@@ -65,7 +79,7 @@ def commit():
         return
     sh("git", "commit", "-q", "-m", "Update ratings")
     for _ in range(3):
-        sh("git", "pull", "-q", "--rebase", check=False)
+        sh("git", "pull", "-q", "--rebase", "--autostash", check=False)
         if sh("git", "push", "-q", check=False).returncode == 0:
             print("committed")
             return
@@ -93,9 +107,10 @@ def hand_over():
 
 def main():
     start = time.time()
+    sync()
     build()
     commit()
-    seen = finals(games())
+    seen = (finals(games()), notified())
     while should_watch(games(), datetime.now(timezone.utc)):
         if time.time() - start > HANDOVER:
             hand_over()
@@ -103,11 +118,12 @@ def main():
         print(f"watching: next check in {POLL // 60} min")
         time.sleep(POLL)
         os.environ["RESEND"] = "false"  # a test push only on the first pass
+        sync()
         build()
-        now_final = finals(games())
-        if now_final - seen:  # a game went final: publish it (and its push)
+        now = (finals(games()), notified())
+        if now != seen:  # a game went final or a push went out: record it now
             commit()
-            seen = now_final
+            seen = now
     commit()
 
 
