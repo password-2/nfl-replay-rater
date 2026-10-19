@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stakes import season_stakes  # noqa: E402
@@ -439,14 +440,41 @@ def rate(game, events, extra=None, exp_margin=None):
 
 # ---------------------------------------------------------------- notify
 
+ET = ZoneInfo("America/New_York")
+
+
+def slot(g):
+    """Short label for a game's TV window, from its US Eastern kickoff time."""
+    try:
+        ko = datetime.fromisoformat(g["date"].replace("Z", "+00:00")).astimezone(ET)
+    except (KeyError, ValueError):
+        return "?"
+    day, hour = ko.strftime("%a"), ko.hour
+    if day == "Sun":
+        if hour < 12:
+            return "intl"
+        if hour < 15:
+            return "1pm"
+        if hour < 19:
+            return "late"
+        return "SNF"
+    if hour >= 19 and day in ("Mon", "Thu"):
+        return "MNF" if day == "Mon" else "TNF"
+    return day
+
+
 LAST_PUSH_ERROR = [None]
 
 
 def notify(topic, games, site_url):
     if not topic or not games:
         return False
+    games = [g for g in games if slot(g) != "1pm"]  # Sunday 18:00 UK games: watched live
+    if not games:
+        return True
     games = sorted(games, key=lambda g: -g["rating"])
-    lines = [f"{g['away']['abbr']} @ {g['home']['abbr']}  {g['rating']:.0f}%  {g['tier_label']}" for g in games]
+    lines = [f"{g['away']['abbr']} @ {g['home']['abbr']} [{slot(g)}]  {g['rating']:.0f}%  {g['tier_label']}"
+             for g in games]
     top = games[0]
     title = f"{len(games)} game{'s' if len(games) != 1 else ''} rated"
     if top["tier"] == "now":
