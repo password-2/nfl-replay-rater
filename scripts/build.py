@@ -575,8 +575,11 @@ def update_sky(year, rows, state):
         found, problems, listed = sky.blackouts(rows)
     except Exception as exc:  # noqa: BLE001
         print(f"sky fetch failed: {exc}", file=sys.stderr)
+        state["sky_last"] = {"error": str(exc)[:200]}
         return
     print(f"sky: {listed} listings, {len(found)} blackouts, problems {problems}")
+    state["sky_last"] = {"listings": listed, "blackouts": sorted(i["match"] for i in found.values()),
+                         "problems": problems}
     # Keep past weeks; replace this run's weeks wholesale so changes stick.
     weeks_now = {(i["season_type"], i["week"]) for i in found.values()}
     data["games"] = {k: v for k, v in data.get("games", {}).items()
