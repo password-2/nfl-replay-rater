@@ -79,6 +79,23 @@ STAKES_VERSION = 3
 EXTRAS_VERSION = 4
 
 
+# Raw factor points -> quality. Most games score on only a few factors, so a
+# straight sum under-rates them. This curve (fitted on every game since 2021 by
+# scripts/fit_curve.py) maps raw points so the verdicts split roughly 25%
+# highlights / 50% condensed / 20% full / 5% watch now. Beyond the last point
+# it keeps the last segment's slope.
+QUALITY_CURVE = [(0, 10), (30.4, 60), (60.8, 80), (83.2, 100)]
+
+
+def curve_points(raw, curve=None):
+    pts = curve or QUALITY_CURVE
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if raw <= x1:
+            return y0 + (y1 - y0) * (max(raw, x0) - x0) / (x1 - x0)
+    (x0, y0), (x1, y1) = pts[-2], pts[-1]
+    return y1 + (y1 - y0) * (raw - x1) / (x1 - x0)
+
+
 def stakes_adjust(stakes):
     if stakes is None:
         return 0.0
@@ -425,9 +442,11 @@ def rate(game, events, extra=None, exp_margin=None):
         "defence_st": round(clamp(sum(1 for e in events if e["defst"]) / 1.5), 3),
         "chaos": round(clamp(chaos_points(extra.get("chaos")) / CHAOS_FULL), 3),
     }
-    quality = round(BASE_POINTS + sum(WEIGHTS[k] * v for k, v in factors.items()), 1)
+    raw = sum(WEIGHTS[k] * v for k, v in factors.items())
+    quality = round(curve_points(raw), 1)
     return {
         "rating": quality,
+        "raw_points": round(raw, 1),
         "factors": factors,
         "style_kind": "defensive" if defensive > shootout else "shootout",
         "chaos": extra.get("chaos"),
@@ -672,7 +691,7 @@ def summarise(g, r, stakes):
     row = dict(g)
     row["stakes"] = stakes
     if r:
-        row.update({k: r[k] for k in ("rating", "factors", "style_kind", "upset_source", "chaos", "ot", "lead_changes", "ties")})
+        row.update({k: r[k] for k in ("rating", "raw_points", "factors", "style_kind", "upset_source", "chaos", "ot", "lead_changes", "ties")})
         base, final, shift, adj, score = verdict(r["rating"], stakes)
         row.update({"tier_base": base, "tier": final, "tier_label": TIER_LABEL[final], "shift": shift,
                     "stakes_adj": adj, "score": score})
@@ -754,6 +773,7 @@ def build_season(year, fetch, cur=None):
         "current": cur is not None,
         "base_points": BASE_POINTS,
         "stakes_curve": STAKES_CURVE,
+        "quality_curve": QUALITY_CURVE,
         "factor_info": [{"key": k, "label": FACTOR_INFO[k][0], "points": WEIGHTS[k], "rule": FACTOR_INFO[k][1]}
                         for k in WEIGHTS],
         "weights": WEIGHTS,

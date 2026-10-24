@@ -29,8 +29,13 @@ to its author.
 
 ## Two scores
 
-**Quality** (how good the game was to watch): 10 base points plus each factor's
-points at full strength. Factors cap at 125%, so quality can pass 100.
+**Quality** (how good the game was to watch): each factor's points at full
+strength (capped at 125%), then calibrated. Most games score on only a few
+factors, so a straight sum under-rates them: `QUALITY_CURVE` in
+`scripts/build.py` maps raw points to quality (0 -> 10, 30.4 -> 60, 60.8 -> 80,
+83.2 -> 100, same slope beyond). It is fitted by `scripts/fit_curve.py` on every
+game since 2021 so verdicts split about 25% highlights, 50% condensed, 20% full
+and 5% watch now. Re-run it after changing weights.
 
 | Factor | Points | Full strength at |
 | --- | --- | --- |
