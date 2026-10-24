@@ -579,7 +579,7 @@ def update_sky(year, rows, state):
         return
     print(f"sky: {listed} listings, {len(found)} blackouts, problems {problems}")
     state["sky_last"] = {"listings": listed, "blackouts": sorted(i["match"] for i in found.values()),
-                         "problems": problems}
+                         "problems": problems, "raw": sky.LAST[:12]}
     # Keep past weeks; replace this run's weeks wholesale so changes stick.
     weeks_now = {(i["season_type"], i["week"]) for i in found.values()}
     data["games"] = {k: v for k, v in data.get("games", {}).items()

@@ -36,6 +36,8 @@ def text_lines(page):
     return [re.sub(r"\s+", " ", l).strip() for l in page.split("\n") if l.strip()]
 
 
+LAST = []  # raw listings from the last parse, for diagnosis
+
 EVENT_RE = re.compile(
     r'<ul[^>]*class="[^"]*\bevent\b[^"]*"[^>]*>(.*?)</ul>\s*<p[^>]*class="[^"]*event-detail[^"]*"[^>]*>(.*?)</p>', re.S)
 
@@ -47,6 +49,7 @@ def parse_listings(page, nicknames):
     such as "NFL - Week 6, Sky Sports NFL (18:00), Sky Sports Main Event (18:00)".
     """
     out = []
+    LAST.clear()
     for teams_html, caption in EVENT_RE.findall(page):
         names = [html.unescape(re.sub(r"<[^>]+>", "", n)).strip()
                  for n in re.findall(r"<strong[^>]*>(.*?)</strong>", teams_html, re.S)]
@@ -55,6 +58,7 @@ def parse_listings(page, nicknames):
             continue
         pick = lambda name: next((n for n in nicknames if re.search(r"\b%s\b" % re.escape(n), name)), None)
         a, b = pick(names[0]), pick(names[1])
+        LAST.append([names[0], names[1], caption.strip()[:120]])
         if a and b:
             out.append((a, b, "Sky Sports NFL" in caption))
     return out
