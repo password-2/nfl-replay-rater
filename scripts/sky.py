@@ -17,6 +17,10 @@ from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
 SKY_URL = "https://www.skysports.com/watch/nfl-on-sky"
+# Sky's weekly fixtures article (updated each week); a second source when the
+# listings page only shows some of the games.
+SKY_ARTICLE = ("https://www.skysports.com/nfl/news/12040/13582747/nfl-2026-season-live-on-sky-sports-"
+               "fixtures-kick-off-times-tv-channel-for-games-this-week-and-weekend")
 DAZN_URL = ("https://www.dazn.com/en-GB/help/articles/"
             "16858954355485-nfl-game-pass-blackout-restrictions-in-the-uk-and-republic-of-ireland")
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) "
@@ -64,6 +68,38 @@ def parse_listings(page, nicknames):
     return out
 
 
+def article_listings(page, names):
+    """[(name_a, name_b, on_sky_sports_nfl)] from the fixtures article text.
+
+    A fixture line names two teams; the channel may be on that line or the
+    next one or two (until the next fixture line).
+    """
+    lines = text_lines(page)
+
+    def teams(line):
+        found = []
+        for n in names:  # longest first, so "New York Giants" beats "Giants"
+            m = re.search(r"\b%s\b" % re.escape(n), line)
+            if m and not any(n in f or f in n for f, _ in found):
+                found.append((n, m.start()))
+        return [n for n, _ in sorted(found, key=lambda x: x[1])]
+
+    out = []
+    for i, line in enumerate(lines):
+        ts = teams(line)
+        if len(ts) != 2:
+            continue
+        ctx = [line]
+        for nxt in lines[i + 1:i + 3]:
+            if len(teams(nxt)) == 2:
+                break
+            ctx.append(nxt)
+        text = " ".join(ctx)
+        out.append((ts[0], ts[1], "Sky Sports NFL" in text))
+        LAST.append([ts[0], ts[1], ("article: " + text)[:120]])
+    return out
+
+
 def window(date_iso):
     uk = datetime.fromisoformat(date_iso.replace("Z", "+00:00")).astimezone(UK)
     if uk.weekday() == 6 and uk.hour in (17, 18):
@@ -82,7 +118,14 @@ def blackouts(games, now=None, page=None):
     for g in games:
         for side in ("home", "away"):
             nick[g[side]["name"]] = g[side]["abbr"]
-    listed = parse_listings(page, sorted(nick, key=len, reverse=True))
+    for full in list(nick):
+        nick.setdefault(full.split()[-1], nick[full])  # "Falcons" as well as "Atlanta Falcons"
+    names = sorted(nick, key=len, reverse=True)
+    listed = parse_listings(page, names)
+    try:
+        listed += article_listings(_get(SKY_ARTICLE), names)
+    except Exception:  # noqa: BLE001
+        pass
 
     upcoming = [g for g in games if g.get("date") and g["season_type"] == 2 and
                 now - timedelta(hours=6) < datetime.fromisoformat(g["date"].replace("Z", "+00:00")) < now + timedelta(days=10)]
