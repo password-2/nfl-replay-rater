@@ -547,7 +547,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     box.appendChild(el("div", { "class": "scroll-x" }, [el("table", { "class": "mini how" }, [
       el("thead", null, [el("tr", null, [el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { text: "Full strength when" })])]), tb
     ])]));
-    box.appendChild(el("p", { text: "Most games only score on a few factors, so the raw points are then calibrated: a curve fitted on every game since 2021 lifts games with a few strong factors most, so the verdicts split roughly a quarter highlights, half condensed, a fifth full game and one in twenty watch now. Each game's breakdown shows this as \"Calibration\"." }));
+    box.appendChild(el("p", { text: "Points are calibrated so that, over past seasons, prime-time games split about 30% highlights, 50% condensed, a full game every 2-3 weeks and 2-3 watch-now games a season." }));
     box.appendChild(el("p", { text: "Verdict from quality: 100+ watch now, 80+ full game, 60+ condensed, below 60 highlights." }));
     box.appendChild(el("p", { text: "Stakes (0–100) are measured before kickoff. Standings are rebuilt from earlier results, the rest of the season is simulated 1,500 times, and stakes measure how much the result swung both teams' chances of making the playoffs, winning the division and taking the 1 seed. Playoff games score 70 to 100 by round." }));
     box.appendChild(el("p", { text: "Stakes then add up to 10 points to the verdict score, enough to tip a marginal game over a boundary. Stakes of 40 or less add nothing, so low stakes never mark a good game down. The bonus rises steadily from 40 to +10 at 90 and above: a Wild Card game gets about +6, a Conference final or Super Bowl +10. Where stakes change the verdict, the table shows what it would be without them." }));
@@ -559,6 +559,8 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
     if (state.data.base_points) tb.appendChild(el("tr", null, [
       el("td", { text: "Base" }), el("td", { "class": "num", text: state.data.base_points.toFixed(1) }), el("td", { "class": "hide-sm" })
     ]));
+    // Factor points are shown calibrated, so base + factors = the rating.
+    var scale = g.raw_points ? (g.rating - (state.data.base_points || 0)) / g.raw_points : 1;
     Object.keys(FACTOR_LABELS).forEach(function (k) {
       if (!(k in w)) return;
       var v = (g.factors && g.factors[k]) || 0;
@@ -567,18 +569,10 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
         : k === "chaos" ? chaosLabel(g) : FACTOR_LABELS[k];
       tb.appendChild(el("tr", null, [
         el("td", { text: label }),
-        el("td", { "class": "num", text: (v * w[k]).toFixed(1) + " / " + w[k] }),
+        el("td", { "class": "num", text: (v * w[k] * scale).toFixed(1) }),
         el("td", { "class": "hide-sm", style: "width:35%" }, [el("div", { "class": "bar" }, [el("b", { style: "width:" + Math.min(100, v * 100) + "%" })])])
       ]));
     });
-    if (g.raw_points != null) {
-      var adj = g.rating - (state.data.base_points || 0) - g.raw_points;
-      tb.appendChild(el("tr", null, [
-        el("td", { text: "Calibration" }),
-        el("td", { "class": "num", text: (adj >= 0 ? "+" : "") + adj.toFixed(1) }),
-        el("td", { "class": "hide-sm" })
-      ]));
-    }
     return el("table", { "class": "mini" }, [
       el("thead", null, [el("tr", null, [el("th", { text: "Factor" }), el("th", { "class": "num", text: "Points" }), el("th", { "class": "hide-sm" })])]),
       tb

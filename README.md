@@ -32,10 +32,11 @@ to its author.
 **Quality** (how good the game was to watch): each factor's points at full
 strength (capped at 125%), then calibrated. Most games score on only a few
 factors, so a straight sum under-rates them: `QUALITY_CURVE` in
-`scripts/build.py` maps raw points to quality (0 -> 10, 30.4 -> 60, 60.8 -> 80,
-83.2 -> 100, same slope beyond). It is fitted by `scripts/fit_curve.py` on every
-game since 2021 so verdicts split about 25% highlights, 50% condensed, 20% full
-and 5% watch now. Re-run it after changing weights.
+`scripts/build.py` maps raw points to quality (0 -> 10, 34.1 -> 60, 66.2 -> 80,
+82.5 -> 100, same slope beyond). It is fitted by `scripts/fit_curve.py` on
+prime-time games since 2021 so they split about 30% highlights, 50% condensed,
+14% full (one every 2-3 weeks) and 5% watch now (2-3 a season). Re-run it after
+changing weights. The page shows factor points already calibrated.
 
 | Factor | Points | Full strength at |
 | --- | --- | --- |

@@ -81,10 +81,10 @@ EXTRAS_VERSION = 4
 
 # Raw factor points -> quality. Most games score on only a few factors, so a
 # straight sum under-rates them. This curve (fitted on every game since 2021 by
-# scripts/fit_curve.py) maps raw points so the verdicts split roughly 25%
-# highlights / 50% condensed / 20% full / 5% watch now. Beyond the last point
+# scripts/fit_curve.py on prime-time games) maps raw points so that roughly 30%
+# are highlights, 50% condensed, 14% full and 5% watch now. Beyond the last point
 # it keeps the last segment's slope.
-QUALITY_CURVE = [(0, 10), (30.4, 60), (60.8, 80), (83.2, 100)]
+QUALITY_CURVE = [(0, 10), (34.1, 60), (66.2, 80), (82.5, 100)]
 
 
 def curve_points(raw, curve=None):
