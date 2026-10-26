@@ -288,7 +288,7 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
   var TIER_ORDER = ["now", "full", "condensed", "highlights"];
   var TIER_NAMES = { now: "Watch now", full: "Full game", condensed: "Condensed", highlights: "Highlights" };
   var POST_WEEKS = { 1: "WC", 2: "DIV", 3: "CONF", 5: "SB" };
-  var LAST_WINDOW_MS = 20 * 3600 * 1000; // a "round": games kicking off within 20h of the latest one
+  var LAST_WINDOW_MS = 60 * 60 * 1000; // the last game: latest kickoff (plus any starting within the hour before it)
 
   var state = {
     seasons: [], season: null, data: null, cache: {},
@@ -427,10 +427,10 @@ footer p { margin: 0 0 6px; max-width: 65ch; }
 
   function summaryTitle(gs) {
     if (state.view === "last") {
-      if (!gs.length) return "Last round";
+      if (!gs.length) return "Last game";
       var ds = gs.map(function (g) { return new Date(g.date); }).sort(function (a, b) { return a - b; });
       var a = fmtKick.format(ds[0]), b = fmtKick.format(ds[ds.length - 1]);
-      return "Last round · " + (a === b ? a : a + " – " + b);
+      return (gs.length > 1 ? "Last games · " : "Last game · ") + (a === b ? a : a + " – " + b);
     }
     if (state.view === "week") return weekTitle(state.week);
     if (state.view === "season") return state.season + " season";
